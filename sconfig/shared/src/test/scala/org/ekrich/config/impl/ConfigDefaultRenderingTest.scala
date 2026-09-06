@@ -1,6 +1,9 @@
 package org.ekrich.config.impl
 
 import org.junit.*
+import java.{util => ju}
+
+import org.ekrich.config.ConfigFactory
 import org.ekrich.config.ConfigFormatOptions
 
 // Regression tests for rendering old behaviour compatibility
@@ -155,5 +158,27 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
                      |}
                      |""".stripMargin
     checkEqualsAndStable(expected, result)
+  }
+
+  @Test
+  def commentsOnTheMergeItselfSurvive(): Unit = {
+    val root = ConfigFactory.parseString("a : 1\na : ${a}", parseOptions).root
+    val merge = root.get("a")
+    val tagged =
+      merge.withOrigin(
+        merge.origin.withComments(ju.Collections.singletonList("kept"))
+      )
+    val result = root
+      .withValue("a", tagged)
+      .render(
+        myDefaultRenderOptions.setConfigFormatOptions(defaultFormatOptions)
+      )
+
+    val expected = """# kept
+                     |"a" : 1,
+                     |"a" : ${a}
+                     |
+                     |""".stripMargin
+    checkEqualObjects(expected, result)
   }
 }

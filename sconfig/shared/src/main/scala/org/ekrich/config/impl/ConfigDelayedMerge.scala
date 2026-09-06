@@ -144,8 +144,21 @@ object ConfigDelayedMerge {
     last.ignoresFallbacks
   }
   // static method also used by ConfigDelayedMergeObject.
+  private def appendComment(
+      sb: jl.StringBuilder,
+      comment: String
+  ): Unit = {
+    sb.append("#")
+    // a comment already parsed back keeps its leading space, and adding
+    // another one on every pass makes the render grow without bound
+    if (!comment.startsWith(" ")) sb.append(' ')
+    sb.append(comment)
+    sb.append("\n")
+  }
+
   def render(
       stack: ju.List[AbstractConfigValue],
+      wrapperOrigin: ConfigOrigin,
       sb: jl.StringBuilder,
       indentVal: Int,
       atRoot: Boolean,
@@ -176,6 +189,20 @@ object ConfigDelayedMerge {
       if (indentPending) indent(sb, indentVal, options)
       else indentPending = true
 
+    // Our origin aggregates the comments of the stack, and each entry prints
+    // its own below. What is left was put on the merge itself, and with the
+    // container skipping us nothing else would print it.
+    if (commentMerge && wrapperOrigin != null) {
+      val onEntries = new ju.HashSet[String]
+      stack.forEach(v => onEntries.addAll(v.origin.comments))
+      wrapperOrigin.comments.forEach { comment =>
+        if (!onEntries.contains(comment)) {
+          indentLine()
+          appendComment(sb, comment)
+        }
+      }
+    }
+
     val reversed = new ju.ArrayList[AbstractConfigValue]
     reversed.addAll(stack)
     ju.Collections.reverse(reversed)
@@ -191,12 +218,7 @@ object ConfigDelayedMerge {
       if (commentMerge) {
         v.origin.comments.forEach { comment =>
           indentLine()
-          sb.append("#")
-          // a comment already parsed back keeps its leading space, and adding
-          // another one on every pass makes the render grow without bound
-          if (!comment.startsWith(" ")) sb.append(' ')
-          sb.append(comment)
-          sb.append("\n")
+          appendComment(sb, comment)
         }
       }
       indentLine()
@@ -327,7 +349,7 @@ final class ConfigDelayedMerge(
       atKey: String,
       options: ConfigRenderOptions
   ): Unit = {
-    ConfigDelayedMerge.render(stack, sb, indent, atRoot, atKey, options)
+    ConfigDelayedMerge.render(stack, origin, sb, indent, atRoot, atKey, options)
   }
 
   override def renderValue(

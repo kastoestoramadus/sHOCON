@@ -211,8 +211,8 @@ class ConfigFormatOptionsTest extends RenderingTestSuite {
     checkEqualsAndStable(expected, result)
   }
 
-  // setSimplifyNestedObjects splices the compressed path onto the key just
-  // written, so it may only run where a key was in fact written.
+  // setSimplifyNestedObjects turns an object into a path on its key, so it
+  // may only run where a key was written, and is handed that key.
 
   @Test
   def keepBracesOfObjectConcatenationOperand(): Unit = {
@@ -258,7 +258,17 @@ class ConfigFormatOptionsTest extends RenderingTestSuite {
                |foo : { a : 2 }""".stripMargin
     val result = formatHocon(in)
 
-    checkReparses(result)
+    val expected = """"foo" : {
+                     |    a.c = 1
+                     |},
+                     |"foo" : ${foo.a},
+                     |"foo" : {
+                     |    a = 2
+                     |}
+                     |
+                     |sibling = 0
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
   }
 
   @Test
