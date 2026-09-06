@@ -87,4 +87,73 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
         |""".stripMargin
     checkEqualsAndStable(expected, result)
   }
+
+  // An unresolved merge under a key renders as repeated key/value entries. The
+  // banner it used to carry parsed back as comments on those values, so every
+  // pass re-emitted them and added one of its own.
+  @Test
+  def unresolvedMergesRenderToAFixedPoint(): Unit = {
+    val inputs = List(
+      """a : [1]
+        |a += 2""".stripMargin,
+      """a : 1
+        |a : ${a}""".stripMargin,
+      """path = [ /bin ]
+        |path = ${path} [ /usr/bin ]""".stripMargin,
+      """path : "a:b:c"
+        |path : ${path}":d"""".stripMargin,
+      """foo : { a : { c : 1 } }
+        |foo : ${foo.a}
+        |foo : { a : 2 }""".stripMargin,
+      """a : 1
+        |b : 2
+        |a : ${b}
+        |b : ${a}""".stripMargin,
+      """# one
+        |a : 1
+        |# two
+        |a : ${a}""".stripMargin
+    )
+    inputs.foreach { in =>
+      val result = formatHocon(in)
+      checkReparses(result)
+      checkEqualObjects(result, formatHocon(result))
+    }
+  }
+
+  @Test
+  def commentsStayWithTheirMergedValue(): Unit = {
+    val in = """# one
+               |a : 1
+               |# two
+               |a : ${a}""".stripMargin
+    val result = formatHocon(in)
+
+    val expected = """# one
+                     |"a" : 1,
+                     |# two
+                     |"a" : ${a}
+                     |
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
+  }
+
+  @Test
+  def nestedUnresolvedMergeIndentsLikeItsSiblings(): Unit = {
+    val in = """outer {
+               |  sib : 0
+               |  a : 1
+               |  a : ${outer.a}
+               |}""".stripMargin
+    val result = formatHocon(in)
+
+    val expected = """outer {
+                     |    "a" : 1,
+                     |    "a" : ${outer.a}
+                     |
+                     |    sib = 0
+                     |}
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
+  }
 }
