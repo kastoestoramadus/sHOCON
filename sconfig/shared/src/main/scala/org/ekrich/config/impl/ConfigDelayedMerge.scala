@@ -47,73 +47,144 @@ object ConfigDelayedMerge {
     var newContext = context
     var count = 0
     var merged: AbstractConfigValue = null
+    // set once nothing left in the stack can contribute to the merge
+    var stopped = false
+    val ends = stack.iterator
     // the end value may or may not be resolved already
-    stack.forEach { end =>
-      var sourceForEnd: ResolveSource = null
-      if (end.isInstanceOf[ReplaceableMergeStack])
-        throw new ConfigException.BugOrBroken(
-          "A delayed merge should not contain another one: " + replaceable
-        )
-      else if (end.isInstanceOf[Unmergeable]) { // the remainder could be any kind of value, including another
-        // ConfigDelayedMerge
-        val remainder =
-          replaceable.makeReplacement(context, count + 1)
-        if (ConfigImpl.traceSubstitutionsEnabled)
-          ConfigImpl.trace(newContext.depth, "remainder portion: " + remainder)
-        // If, while resolving 'end' we come back to the same
-        // merge stack, we only want to look _below_ 'end'
-        // in the stack. So we arrange to replace the
-        // ConfigDelayedMerge with a value that is only
-        // the remainder of the stack below this one.
-        if (ConfigImpl.traceSubstitutionsEnabled)
-          ConfigImpl.trace(newContext.depth, "building sourceForEnd")
-        // we resetParents() here because we'll be resolving "end"
-        // against a root which does NOT contain "end"
-        sourceForEnd = source.replaceWithinCurrentParent(
-          replaceable.asInstanceOf[AbstractConfigValue],
-          remainder
-        )
+    while (!stopped && ends.hasNext) {
+      val end = ends.next()
+      // Per the HOCON spec, a substitution hidden by a value it cannot be
+      // merged with is never evaluated. Once merged ignores fallbacks,
+      // nothing below it in the stack can contribute, so stop here rather
+      // than resolve values whose result would be discarded.
+      if (merged != null && merged.ignoresFallbacks) {
         if (ConfigImpl.traceSubstitutionsEnabled)
           ConfigImpl.trace(
             newContext.depth,
-            "  sourceForEnd before reset parents but after replace: " + sourceForEnd
+            "merged ignores fallbacks, skipping remaining stack"
           )
-        sourceForEnd = sourceForEnd.resetParents
+        stopped = true
       } else {
-        if (ConfigImpl.traceSubstitutionsEnabled)
-          ConfigImpl.trace(
-            newContext.depth,
-            "will resolve end against the original source with parent pushed"
+        var sourceForEnd: ResolveSource = null
+        // set when the merge below would discard the whole of 'end'
+        var shadowed = false
+        if (end.isInstanceOf[ReplaceableMergeStack])
+          throw new ConfigException.BugOrBroken(
+            "A delayed merge should not contain another one: " + replaceable
           )
-        sourceForEnd = source.pushParent(replaceable)
-      }
-      if (ConfigImpl.traceSubstitutionsEnabled)
-        ConfigImpl.trace(newContext.depth, "sourceForEnd=" + sourceForEnd)
-      if (ConfigImpl.traceSubstitutionsEnabled)
-        ConfigImpl.trace(
-          newContext.depth,
-          "Resolving highest-priority item in delayed merge " + end
-            + " against " + sourceForEnd + " endWasRemoved=" + (source != sourceForEnd)
-        )
-      val result =
-        newContext.resolve(end, sourceForEnd)
-      val resolvedEnd = result.value
-      newContext = result.context
-      if (resolvedEnd != null)
-        if (merged == null) merged = resolvedEnd
-        else {
+        else if (end.isInstanceOf[Unmergeable]) { // the remainder could be any kind of value, including another
+          // ConfigDelayedMerge
+          val remainder =
+            replaceable.makeReplacement(context, count + 1)
           if (ConfigImpl.traceSubstitutionsEnabled)
             ConfigImpl.trace(
-              newContext.depth + 1,
-              "merging " + merged + " with fallback " + resolvedEnd
+              newContext.depth,
+              "remainder portion: " + remainder
             )
-          merged = merged.withFallback(resolvedEnd)
+          // If, while resolving 'end' we come back to the same
+          // merge stack, we only want to look _below_ 'end'
+          // in the stack. So we arrange to replace the
+          // ConfigDelayedMerge with a value that is only
+          // the remainder of the stack below this one.
+          if (ConfigImpl.traceSubstitutionsEnabled)
+            ConfigImpl.trace(newContext.depth, "building sourceForEnd")
+          // we resetParents() here because we'll be resolving "end"
+          // against a root which does NOT contain "end"
+          sourceForEnd = source.replaceWithinCurrentParent(
+            replaceable.asInstanceOf[AbstractConfigValue],
+            remainder
+          )
+          if (ConfigImpl.traceSubstitutionsEnabled)
+            ConfigImpl.trace(
+              newContext.depth,
+              "  sourceForEnd before reset parents but after replace: " + sourceForEnd
+            )
+          sourceForEnd = sourceForEnd.resetParents
+        } else {
+          if (ConfigImpl.traceSubstitutionsEnabled)
+            ConfigImpl.trace(
+              newContext.depth,
+              "will resolve end against the original source with parent pushed"
+            )
+          sourceForEnd = source.pushParent(replaceable)
+          // The same spec rule as the short-circuit above, applied per key:
+          // when every key of the lower-priority 'end' is already held in
+          // 'merged' by a value that ignores fallbacks, the merge below
+          // discards all of 'end', so none of it needs resolving. Only a
+          // whole entry is ever skipped - resolving a pruned copy instead
+          // would give it a fresh identity, and an inner substitution
+          // walking back up the parent chain would no longer find itself
+          // in this stack.
+          shadowed = merged.isInstanceOf[AbstractConfigObject] &&
+            end.isInstanceOf[SimpleConfigObject] &&
+            allKeysShadowed(
+              end.asInstanceOf[SimpleConfigObject],
+              merged.asInstanceOf[AbstractConfigObject]
+            )
         }
-      count += 1
-      if (ConfigImpl.traceSubstitutionsEnabled)
-        ConfigImpl.trace(newContext.depth, "stack merged, yielding: " + merged)
+        if (shadowed) {
+          if (ConfigImpl.traceSubstitutionsEnabled)
+            ConfigImpl.trace(
+              newContext.depth,
+              "all keys in end are shadowed by merged, skipping"
+            )
+          count += 1
+        } else {
+          if (ConfigImpl.traceSubstitutionsEnabled)
+            ConfigImpl.trace(newContext.depth, "sourceForEnd=" + sourceForEnd)
+          if (ConfigImpl.traceSubstitutionsEnabled)
+            ConfigImpl.trace(
+              newContext.depth,
+              "Resolving highest-priority item in delayed merge " + end
+                + " against " + sourceForEnd + " endWasRemoved=" + (source != sourceForEnd)
+            )
+          val result =
+            newContext.resolve(end, sourceForEnd)
+          val resolvedEnd = result.value
+          newContext = result.context
+          if (resolvedEnd != null)
+            if (merged == null) merged = resolvedEnd
+            else {
+              if (ConfigImpl.traceSubstitutionsEnabled)
+                ConfigImpl.trace(
+                  newContext.depth + 1,
+                  "merging " + merged + " with fallback " + resolvedEnd
+                )
+              merged = merged.withFallback(resolvedEnd)
+            }
+          count += 1
+          if (ConfigImpl.traceSubstitutionsEnabled)
+            ConfigImpl.trace(
+              newContext.depth,
+              "stack merged, yielding: " + merged
+            )
+        }
+      }
     }
     ResolveResult.make(newContext, merged)
+  }
+
+  // True when every key of 'end' is held in 'merged' by a value that ignores
+  // fallbacks, so that merging 'end' underneath it would drop all of it.
+  private def allKeysShadowed(
+      end: SimpleConfigObject,
+      merged: AbstractConfigObject
+  ): Boolean = {
+    // an empty object contributes nothing either way; treat it as not
+    // shadowed and let the ordinary merge deal with it
+    var shadowed = !end.isEmpty
+    val keys = end.keySet.iterator
+    while (shadowed && keys.hasNext) {
+      val mergedValue =
+        try merged.attemptPeekWithPartialResolve(keys.next())
+        catch {
+          // merged cannot say what it holds at that key, so assume it does
+          // not shadow it
+          case _: ConfigException.NotResolved => null
+        }
+      shadowed = mergedValue != null && mergedValue.ignoresFallbacks
+    }
+    shadowed
   }
   // static method also used by ConfigDelayedMergeObject; end may be null
   def makeReplacement(
