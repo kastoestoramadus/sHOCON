@@ -87,4 +87,23 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
         |""".stripMargin
     checkEqualsAndStable(expected, result)
   }
+
+  // an object nested inside an array is never itself "at root" - it always
+  // needs its own braces, first entry included. Porting lightbend/config#832.
+  @Test
+  def listElementsKeepTheirBraces(): Unit = {
+    val in = """root = [{foo = bar}, {baz = qux}]"""
+    val result = formatHocon(in)
+
+    val expected = """root = [
+                     |    {
+                     |        foo = bar
+                     |    },
+                     |    {
+                     |        baz = qux
+                     |    }
+                     |]
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
+  }
 }
