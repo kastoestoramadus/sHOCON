@@ -47,16 +47,13 @@ object ConfigDelayedMerge {
     var newContext = context
     var count = 0
     var merged: AbstractConfigValue = null
-    // set once nothing left in the stack can contribute to the merge
     var stopped = false
     val ends = stack.iterator
     // the end value may or may not be resolved already
     while (!stopped && ends.hasNext) {
       val end = ends.next()
-      // Per the HOCON spec, a substitution hidden by a value it cannot be
-      // merged with is never evaluated. Once merged ignores fallbacks,
-      // nothing below it in the stack can contribute, so stop here rather
-      // than resolve values whose result would be discarded.
+      // a substitution hidden by a value it cannot merge with is never
+      // evaluated (HOCON spec), so stop once merged ignores fallbacks
       if (merged != null && merged.ignoresFallbacks) {
         if (ConfigImpl.traceSubstitutionsEnabled)
           ConfigImpl.trace(
@@ -66,7 +63,6 @@ object ConfigDelayedMerge {
         stopped = true
       } else {
         var sourceForEnd: ResolveSource = null
-        // set when the merge below would discard the whole of 'end'
         var shadowed = false
         if (end.isInstanceOf[ReplaceableMergeStack])
           throw new ConfigException.BugOrBroken(
@@ -107,14 +103,10 @@ object ConfigDelayedMerge {
               "will resolve end against the original source with parent pushed"
             )
           sourceForEnd = source.pushParent(replaceable)
-          // The same spec rule as the short-circuit above, applied per key:
-          // when every key of the lower-priority 'end' is already held in
-          // 'merged' by a value that ignores fallbacks, the merge below
-          // discards all of 'end', so none of it needs resolving. Only a
-          // whole entry is ever skipped - resolving a pruned copy instead
-          // would give it a fresh identity, and an inner substitution
-          // walking back up the parent chain would no longer find itself
-          // in this stack.
+          // same rule per key: the merge drops all of 'end', so skip it.
+          // Only ever skip a whole entry - resolving a pruned copy gives it
+          // a fresh identity, and an inner merge walking up the parent chain
+          // then fails to find itself in this stack (lightbend/config#846)
           shadowed = merged.isInstanceOf[AbstractConfigObject] &&
             end.isInstanceOf[SimpleConfigObject] &&
             allKeysShadowed(
@@ -164,22 +156,20 @@ object ConfigDelayedMerge {
     ResolveResult.make(newContext, merged)
   }
 
-  // True when every key of 'end' is held in 'merged' by a value that ignores
-  // fallbacks, so that merging 'end' underneath it would drop all of it.
+  // true when 'merged' holds every key of 'end' with a value that ignores
+  // fallbacks, so merging 'end' underneath it would drop all of it
   private def allKeysShadowed(
       end: SimpleConfigObject,
       merged: AbstractConfigObject
   ): Boolean = {
-    // an empty object contributes nothing either way; treat it as not
-    // shadowed and let the ordinary merge deal with it
+    // empty contributes nothing either way; leave it to the ordinary merge
     var shadowed = !end.isEmpty
     val keys = end.keySet.iterator
     while (shadowed && keys.hasNext) {
       val mergedValue =
         try merged.attemptPeekWithPartialResolve(keys.next())
         catch {
-          // merged cannot say what it holds at that key, so assume it does
-          // not shadow it
+          // cannot tell what is there, so assume it does not shadow
           case _: ConfigException.NotResolved => null
         }
       shadowed = mergedValue != null && mergedValue.ignoresFallbacks
