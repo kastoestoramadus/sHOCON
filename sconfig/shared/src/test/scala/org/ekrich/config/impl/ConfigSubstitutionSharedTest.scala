@@ -1456,6 +1456,18 @@ class ConfigSubstitutionSharedTest extends TestUtilsShared {
     assertEquals(42, resolve(obj).getInt("p"))
   }
 
+  // the same, with the hiding non-object arriving through a substitution
+  @Test
+  def substitutionInsideObjectHiddenByNonObjectFromSubstitutionIsNotEvaluated()
+      : Unit = {
+    val obj = parseObject("""
+        p: { a : ${does-not-exist} }
+        p: ${z}
+        z: 42
+    """)
+    assertEquals(42, resolve(obj).getInt("p"))
+  }
+
   // Only a whole stack entry may be skipped as shadowed. Resolving a copy of
   // 'end' holding just its unshadowed keys used to look equivalent, but it
   // gives that copy a fresh identity: an inner delayed merge resolving from
