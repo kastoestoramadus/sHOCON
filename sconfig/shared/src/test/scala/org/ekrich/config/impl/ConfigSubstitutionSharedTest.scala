@@ -1413,4 +1413,73 @@ class ConfigSubstitutionSharedTest extends TestUtilsShared {
       resolved2.getConfig("a").root
     )
   }
+
+  // A substitution hidden by a value it cannot be merged with is never
+  // evaluated. That already held when the hiding value was written out
+  // directly, but not when it arrived through another substitution that
+  // resolved to an object - see lightbend/config#838.
+  @Test
+  def substitutionHiddenByObjectFromSubstitutionIsNotEvaluated(): Unit = {
+    // the direct-literal case, as the spec describes it
+    val direct = parseObject("""
+        p: { a : ${y} }
+        p: { a : 42 }
+        p: { a : { x : 1 } }
+    """)
+    assertEquals(
+      parseObject("""{ a : { x : 1 } }"""),
+      resolve(direct).getConfig("p").root
+    )
+
+    // the middle hiding value supplied by a substitution to an object;
+    // ${y} still must never be evaluated
+    val viaSub = parseObject("""
+        p: { a : ${y} }
+        p: ${x}
+        p: { a : { x : 1 } }
+        x: { a : 42 }
+    """)
+    assertEquals(
+      parseObject("""{ a : { x : 1 } }"""),
+      resolve(viaSub).getConfig("p").root
+    )
+  }
+
+  // an object holding a substitution, hidden by a literal non-object: the
+  // object cannot merge with 42, so what it holds is never evaluated
+  @Test
+  def substitutionInsideObjectHiddenByLiteralNonObjectIsNotEvaluated(): Unit = {
+    val obj = parseObject("""
+        p: { a : ${does-not-exist} }
+        p: 42
+    """)
+    assertEquals(42, resolve(obj).getInt("p"))
+  }
+
+  // Only a whole stack entry may be skipped as shadowed. Resolving a copy of
+  // 'end' holding just its unshadowed keys used to look equivalent, but it
+  // gives that copy a fresh identity: an inner delayed merge resolving from
+  // inside it walks up the parent chain to this stack, cannot find itself
+  // there, and the resolve dies with BugOrBroken. See lightbend/config#846.
+  @Test
+  def partiallyShadowedObjectWithInnerDelayedMergeResolves(): Unit = {
+    // ${m} between the two `p` entries is what forces p to stay a delayed
+    // merge object. The lower entry holds a, b and c; the higher one shadows
+    // a and b but not c, and the surviving c is itself a delayed merge
+    // holding an optional substitution.
+    val obj = parseObject("""
+        p: {
+          a: "low"
+          b: "low"
+          c: { x: "default", x: ${?u} }
+        }
+        p: ${m}
+        p: { a: "high", b: "high" }
+        m: {}
+    """)
+    val resolved = resolve(obj)
+    assertEquals("high", resolved.getString("p.a"))
+    assertEquals("high", resolved.getString("p.b"))
+    assertEquals("default", resolved.getString("p.c.x"))
+  }
 }
