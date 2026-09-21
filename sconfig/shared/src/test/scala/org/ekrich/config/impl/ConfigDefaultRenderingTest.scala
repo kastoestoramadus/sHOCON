@@ -5,6 +5,7 @@ import org.junit.Assert.*
 import org.ekrich.config.ConfigFactory
 import org.ekrich.config.ConfigFormatOptions
 import org.ekrich.config.ConfigParseOptions
+import org.ekrich.config.ConfigResolveOptions
 
 import scala.jdk.CollectionConverters.*
 
@@ -124,5 +125,30 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
     val resolved =
       ConfigFactory.parseString(result, ConfigParseOptions.defaults).resolve()
     assertEquals(List(1, 2, 1, 2), resolved.getIntList("except").asScala)
+  }
+
+  // lightbend/config#800: the nested merge a partial resolve left behind has
+  // no spelling in HOCON, so the render could not be read back
+  @Test
+  def partiallyResolvedAppendsRenderAsOneList(): Unit = {
+    val in = """a = [${s}-1]
+               |a += ${s}-2
+               |a += ${s}-3
+               |a += ${s}-4""".stripMargin
+    val partial = ConfigFactory
+      .parseString(in, parseOptions)
+      .resolve(ConfigResolveOptions.defaults.setAllowUnresolved(true))
+    val result = partial.root.render(
+      myDefaultRenderOptions.setConfigFormatOptions(defaultFormatOptions)
+    )
+
+    val expected = """a = [
+                     |    ${s}-1,
+                     |    ${s}-2,
+                     |    ${s}-3,
+                     |    ${s}-4
+                     |]
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
   }
 }

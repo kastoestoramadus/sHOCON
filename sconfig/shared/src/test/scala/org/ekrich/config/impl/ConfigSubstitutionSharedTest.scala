@@ -9,6 +9,7 @@ import org.junit._
 import org.ekrich.config.ConfigException
 import org.ekrich.config.ConfigResolveOptions
 import org.ekrich.config.ConfigFactory
+import org.ekrich.config.ConfigRenderOptions
 import scala.jdk.CollectionConverters._
 
 /**
@@ -1491,5 +1492,54 @@ class ConfigSubstitutionSharedTest extends TestUtilsShared {
     assertEquals("high", resolved.getString("p.a"))
     assertEquals("high", resolved.getString("p.b"))
     assertEquals("default", resolved.getString("p.c.x"))
+  }
+
+  private val partially = ConfigResolveOptions.defaults.setAllowUnresolved(true)
+  private val concise = ConfigRenderOptions.concise
+
+  // lightbend/config#800: each `+=` stacked another delayed merge on the last,
+  // and resolving that against a fallback died with BugOrBroken
+  @Test
+  def partiallyResolvedAppendsResolveAgainstAFallbackInEitherOrder(): Unit = {
+    val partial = ConfigFactory
+      .parseString("""a = [${s}-1]
+                     |a += ${s}-2
+                     |a += ${s}-3
+                     |a += ${s}-4""".stripMargin)
+      .resolve(partially)
+    val s = ConfigFactory.parseString("s = abc")
+    val expected = List("abc-1", "abc-2", "abc-3", "abc-4")
+
+    val after = partial.withFallback(s).resolve()
+    assertEquals(expected, after.getStringList("a").asScala.toList)
+    val before = s.withFallback(partial).resolve()
+    assertEquals(expected, before.getStringList("a").asScala.toList)
+  }
+
+  // what a list hides is not evaluated, unresolved or not
+  @Test
+  def partiallyResolvedListHidesTheValuesBelowIt(): Unit = {
+    val partial = ConfigFactory
+      .parseString("""a = ${nope}
+                     |a = [${s}]""".stripMargin)
+      .resolve(partially)
+
+    assertEquals("""{"a":[${s}]}""", partial.root.render(concise))
+  }
+
+  // ${x} may still turn out to be an object, so the object below it has to
+  // stay in the stack
+  @Test
+  def partiallyResolvedSubstitutionStillMergesWithTheObjectBelowIt(): Unit = {
+    val partial = ConfigFactory
+      .parseString("""a = { q = 1 }
+                     |a = ${x}""".stripMargin)
+      .resolve(partially)
+
+    val x = ConfigFactory.parseString("x = { r = 2 }")
+    assertEquals(
+      """{"a":{"q":1,"r":2},"x":{"r":2}}""",
+      partial.withFallback(x).resolve().root.render(concise)
+    )
   }
 }
