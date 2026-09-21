@@ -151,4 +151,28 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
                      |""".stripMargin
     checkEqualsAndStable(expected, result)
   }
+
+  @Test
+  def partiallyResolvedSelfReferencesRenderAsOneValue(): Unit = {
+    val in = """a = ${s}-1
+               |a = ${a}-2
+               |a = ${a}-3
+               |b = ${base}
+               |b += ${s}-2
+               |b += ${s}-3""".stripMargin
+    val partial = ConfigFactory
+      .parseString(in, parseOptions)
+      .resolve(ConfigResolveOptions.defaults.setAllowUnresolved(true))
+    val result = partial.root.render(
+      myDefaultRenderOptions.setConfigFormatOptions(defaultFormatOptions)
+    )
+
+    val expected = """a = ${s}"-1-2-3"
+                     |b = ${base}[
+                     |    ${s}-2,
+                     |    ${s}-3
+                     |]
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
+  }
 }
