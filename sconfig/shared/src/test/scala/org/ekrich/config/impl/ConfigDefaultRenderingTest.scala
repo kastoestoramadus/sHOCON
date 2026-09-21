@@ -218,4 +218,44 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
                      |""".stripMargin
     checkEqualObjects(expected, result)
   }
+
+  // `+=` wraps its value in a list, and the comment above the field went to
+  // the wrapped element as well as to the concatenation, so it printed twice.
+  @Test
+  def commentOnPlusEqualsIsRenderedOnce(): Unit = {
+    val in = """# two
+               |a += 2""".stripMargin
+    val result = formatHocon(in)
+
+    val expected = """# two
+                     |a = ${?a}[
+                     |    2
+                     |]
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
+  }
+
+  @Test
+  def commentOnPlusEqualsAfterADefinitionIsRenderedOnce(): Unit = {
+    val in = """a : [1]
+               |# two
+               |a += 2""".stripMargin
+    val result = formatHocon(in)
+
+    assertEquals(1, result.split("# two", -1).length - 1)
+    checkEqualObjects(result, formatHocon(result))
+  }
+
+  @Test
+  def commentOnPlusEqualsSurvivesResolve(): Unit = {
+    val in = """a : [1]
+               |# two
+               |a += 2""".stripMargin
+    val resolved = ConfigFactory.parseString(in, parseOptions).resolve()
+
+    assertEquals(
+      List(" two"),
+      resolved.getValue("a").origin.comments.asScala.toList
+    )
+  }
 }
