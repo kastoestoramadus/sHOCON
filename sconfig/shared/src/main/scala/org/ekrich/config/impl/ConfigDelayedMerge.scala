@@ -53,8 +53,11 @@ object ConfigDelayedMerge {
     while (!stopped && ends.hasNext) {
       val end = ends.next()
       // a substitution hidden by a value it cannot merge with is never
-      // evaluated (HOCON spec), so stop once merged ignores fallbacks
-      if (merged != null && merged.ignoresFallbacks) {
+      // evaluated (HOCON spec), so stop once merged ignores fallbacks. A list
+      // hides the rest even while a substitution inside it is unresolved,
+      // its own references to the values below having been resolved by now
+      if (merged != null &&
+          (merged.ignoresFallbacks || merged.isInstanceOf[SimpleConfigList])) {
         if (ConfigImpl.traceSubstitutionsEnabled)
           ConfigImpl.trace(
             newContext.depth,
