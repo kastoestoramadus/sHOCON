@@ -398,17 +398,19 @@ object ConfigImpl {
     )
   }
 
-  private object EnvVariablesOverridesHolder {
-    @volatile private[impl] var envVariables = loadEnvVariablesOverrides
-  }
+  // filled on first use rather than in an object initializer: a failed
+  // initializer poisons the object for good, and how the failure surfaces
+  // differs between the JVM and Scala Native
+  @volatile private var envVariablesOverrides: AbstractConfigObject = null
 
-  def envVariablesOverridesAsConfigObject: AbstractConfigObject =
-    try {
-      EnvVariablesOverridesHolder.envVariables
-    } catch {
-      case e: ExceptionInInitializerError =>
-        throw ConfigImplUtil.extractInitializerError(e)
+  def envVariablesOverridesAsConfigObject: AbstractConfigObject = {
+    var o = envVariablesOverrides
+    if (o == null) {
+      o = loadEnvVariablesOverrides
+      envVariablesOverrides = o
     }
+    o
+  }
 
   def envVariablesOverridesAsConfig: Config =
     envVariablesOverridesAsConfigObject.toConfig
@@ -416,7 +418,7 @@ object ConfigImpl {
   def reloadEnvVariablesOverridesConfig(): Unit = {
     // ConfigFactory.invalidateCaches() relies on this having the side
     // effect that it drops all caches
-    EnvVariablesOverridesHolder.envVariables = loadEnvVariablesOverrides
+    envVariablesOverrides = null
   }
 
   def defaultReference(loader: ClassLoader): Config = {
