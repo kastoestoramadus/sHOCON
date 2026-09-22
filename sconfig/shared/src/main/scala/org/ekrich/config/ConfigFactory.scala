@@ -1051,10 +1051,6 @@ object ConfigFactory extends PlatformConfigFactory {
   def parseApplicationReplacement(
       parseOptions: ConfigParseOptions
   ): Option[Config] = {
-    val withLoader =
-      ensureClassLoader(parseOptions, "parseApplicationReplacement")
-    val loader = withLoader.getClassLoader
-
     var specified = 0
     var resource = System.getProperty("config.resource")
     if (resource != null) specified += 1
@@ -1071,12 +1067,22 @@ object ConfigFactory extends PlatformConfigFactory {
       )
     } else {
       // the override file/url/resource MUST be present or it's an error
-      val overrideOptions = withLoader.setAllowMissing(false)
+      val overrideOptions = parseOptions.setAllowMissing(false)
       if (resource != null) {
         if (resource.startsWith("/")) resource = resource.substring(1)
+        // only a resource needs a class loader; resolving it up front
+        // fails on Scala Native even when nothing is set
+        val withLoader =
+          ensureClassLoader(overrideOptions, "parseApplicationReplacement")
         // this deliberately does not parseResourcesAnySyntax; if
         // people want that they can use an include statement.
-        Some(ConfigFactory.parseResources(loader, resource, overrideOptions))
+        Some(
+          ConfigFactory.parseResources(
+            withLoader.getClassLoader,
+            resource,
+            withLoader
+          )
+        )
       } else if (file != null) {
         Some(ConfigFactory.parseFile(new File(file), overrideOptions))
       } else {
