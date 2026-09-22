@@ -1483,7 +1483,7 @@ class PublicApiTest extends TestUtils {
   }
 
   @Test
-  def defaultApplicationUsesParseApplicationReplacement(): Unit = {
+  def defaultApplicationUsesConfigResource(): Unit = {
     try {
       System.setProperty("config.resource", "test01.conf")
       val application = ConfigFactory.defaultApplication()
