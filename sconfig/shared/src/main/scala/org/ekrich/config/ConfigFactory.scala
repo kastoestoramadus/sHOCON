@@ -1006,6 +1006,93 @@ object ConfigFactory extends PlatformConfigFactory {
     parseResourcesAnySyntax(resourceBasename, ConfigParseOptions.defaults)
 
   /**
+   * Parses only the application replacement specified by one of
+   * `config.resource`, `config.file` or `config.url`, without falling back to
+   * "application.conf" on the classpath. This is the piece of
+   * [[#defaultApplication(options:org\.ekrich\.config\.ConfigParseOptions)* defaultApplication]]
+   * that lets a launch script redirect `application.conf` elsewhere, exposed
+   * standalone so callers can reuse the override-selection logic (which system
+   * property was set, and which single one must be) without also pulling in the
+   * classpath fallback.
+   *
+   * @return
+   *   the replacement config if one of the three system properties was set, or
+   *   `None` if none was set
+   */
+  def parseApplicationReplacement(): Option[Config] =
+    parseApplicationReplacement(ConfigParseOptions.defaults)
+
+  /**
+   * Like [[#parseApplicationReplacement()* parseApplicationReplacement()]] but
+   * allows you to specify a class loader to use rather than the current context
+   * class loader.
+   *
+   * @param loader
+   *   the class loader
+   * @return
+   *   the replacement config if one of the three system properties was set, or
+   *   `None` if none was set
+   */
+  def parseApplicationReplacement(loader: ClassLoader): Option[Config] =
+    parseApplicationReplacement(
+      ConfigParseOptions.defaults.setClassLoader(loader)
+    )
+
+  /**
+   * Like [[#parseApplicationReplacement()* parseApplicationReplacement()]] but
+   * allows you to specify parse options.
+   *
+   * @param parseOptions
+   *   parse options
+   * @return
+   *   the replacement config if one of the three system properties was set, or
+   *   `None` if none was set
+   */
+  def parseApplicationReplacement(
+      parseOptions: ConfigParseOptions
+  ): Option[Config] = {
+    val withLoader =
+      ensureClassLoader(parseOptions, "parseApplicationReplacement")
+    val loader = withLoader.getClassLoader
+
+    var specified = 0
+    var resource = System.getProperty("config.resource")
+    if (resource != null) specified += 1
+    val file = System.getProperty("config.file")
+    if (file != null) specified += 1
+    val url = System.getProperty("config.url")
+    if (url != null) specified += 1
+
+    if (specified == 0) {
+      None
+    } else if (specified > 1) {
+      throw new ConfigException.Generic(
+        "You set more than one of config.file='" + file + "', config.url='" + url + "', config.resource='" + resource + "'; don't know which one to use!"
+      )
+    } else {
+      // the override file/url/resource MUST be present or it's an error
+      val overrideOptions = withLoader.setAllowMissing(false)
+      if (resource != null) {
+        if (resource.startsWith("/")) resource = resource.substring(1)
+        // this deliberately does not parseResourcesAnySyntax; if
+        // people want that they can use an include statement.
+        Some(ConfigFactory.parseResources(loader, resource, overrideOptions))
+      } else if (file != null) {
+        Some(ConfigFactory.parseFile(new File(file), overrideOptions))
+      } else {
+        try Some(ConfigFactory.parseURL(new URL(url), overrideOptions))
+        catch {
+          case e: java.net.MalformedURLException =>
+            throw new ConfigException.Generic(
+              "Bad URL in config.url system property: '" + url + "': " + e.getMessage,
+              e
+            )
+        }
+      }
+    }
+  }
+
+  /**
    * Creates a [[Config]] based on a `java.util.Map` from paths to plain Java
    * values. Similar to
    * [[ConfigValueFactory$.fromMap(values:java\.util\.Map[String,_],originDescription:String)* ConfigValueFactory.fromMap(Map,String)]],

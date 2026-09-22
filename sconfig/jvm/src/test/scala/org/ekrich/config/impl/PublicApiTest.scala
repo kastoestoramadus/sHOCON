@@ -1414,6 +1414,70 @@ class PublicApiTest extends TestUtils {
   }
 
   @Test
+  def parseApplicationReplacementIsNoneWhenNothingSet(): Unit = {
+    assertEquals(
+      "config.resource is not set",
+      null,
+      System.getProperty("config.resource")
+    )
+    assertEquals(
+      "config.file is not set",
+      null,
+      System.getProperty("config.file")
+    )
+    assertEquals(
+      "config.url is not set",
+      null,
+      System.getProperty("config.url")
+    )
+    assertEquals(None, ConfigFactory.parseApplicationReplacement())
+  }
+
+  @Test
+  def parseApplicationReplacementUsesConfigResource(): Unit = {
+    try {
+      System.setProperty("config.resource", "test01.conf")
+      val replacement = ConfigFactory.parseApplicationReplacement()
+      assertTrue("replacement is present", replacement.isDefined)
+      assertEquals(42, replacement.get.getInt("ints.fortyTwo"))
+    } finally {
+      System.clearProperty("config.resource")
+      ConfigImpl.reloadSystemPropertiesConfig()
+    }
+  }
+
+  @Test
+  def parseApplicationReplacementRejectsMoreThanOneOverride(): Unit = {
+    try {
+      System.setProperty("config.resource", "test01.conf")
+      System.setProperty("config.file", "test02.conf")
+      val e = intercept[ConfigException.Generic] {
+        ConfigFactory.parseApplicationReplacement()
+      }
+      assertTrue(
+        "wrong exception: " + e.getMessage,
+        e.getMessage.contains("don't know which one to use")
+      )
+    } finally {
+      System.clearProperty("config.resource")
+      System.clearProperty("config.file")
+      ConfigImpl.reloadSystemPropertiesConfig()
+    }
+  }
+
+  @Test
+  def defaultApplicationUsesParseApplicationReplacement(): Unit = {
+    try {
+      System.setProperty("config.resource", "test01.conf")
+      val application = ConfigFactory.defaultApplication()
+      assertEquals(42, application.getInt("ints.fortyTwo"))
+    } finally {
+      System.clearProperty("config.resource")
+      ConfigImpl.reloadSystemPropertiesConfig()
+    }
+  }
+
+  @Test
   def exceptionSerializable(): Unit = {
     // ArrayList is a serialization problem so we want to cover it in tests
     val comments =
