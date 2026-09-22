@@ -272,6 +272,23 @@ object ConfigImplUtil {
     builder.toString
   }
 
+  // only the variables starting with prefix, keyed by the config path each
+  // one overrides; the rest of the environment must not leak into the
+  // overrides (lightbend/config#686)
+  private[impl] def envVariablesAsProperties(
+      env: ju.Map[String, String],
+      prefix: String
+  ): ju.Map[String, String] = {
+    val result = new ju.HashMap[String, String]
+    val entries = env.entrySet.iterator
+    while (entries.hasNext) {
+      val entry = entries.next
+      if (entry.getKey.startsWith(prefix))
+        result.put(envVariableAsProperty(entry.getKey, prefix), entry.getValue)
+    }
+    result
+  }
+
   /**
    * Guess configuration syntax from given filename.
    *

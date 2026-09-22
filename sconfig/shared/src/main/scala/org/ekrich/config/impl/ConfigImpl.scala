@@ -378,25 +378,14 @@ object ConfigImpl {
 
   private val ENV_VAR_OVERRIDE_PREFIX = "CONFIG_FORCE_"
 
-  private def loadEnvVariablesOverrides: AbstractConfigObject = {
-    val result = new ju.HashMap[String, String]
-    val entries = System.getenv.entrySet.iterator
-    while (entries.hasNext) {
-      val entry = entries.next
-      if (entry.getKey.startsWith(ENV_VAR_OVERRIDE_PREFIX))
-        result.put(
-          ConfigImplUtil.envVariableAsProperty(
-            entry.getKey,
-            ENV_VAR_OVERRIDE_PREFIX
-          ),
-          entry.getValue
-        )
-    }
+  private def loadEnvVariablesOverrides: AbstractConfigObject =
     PropertiesParser.fromStringMap(
       newEnvVariable("env variables overrides"),
-      result
+      ConfigImplUtil.envVariablesAsProperties(
+        System.getenv,
+        ENV_VAR_OVERRIDE_PREFIX
+      )
     )
-  }
 
   // filled on first use rather than in an object initializer: a failed
   // initializer poisons the object for good, and how the failure surfaces

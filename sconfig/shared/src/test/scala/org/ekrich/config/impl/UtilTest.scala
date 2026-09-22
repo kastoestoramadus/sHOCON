@@ -159,4 +159,17 @@ class UtilTest extends TestUtilsShared {
       ConfigImplUtil.envVariableAsProperty("prefix_a_b___c____d", "prefix_")
     }
   }
+
+  @Test
+  def envVariablesAsPropertiesKeepsOnlyPrefixed(): Unit = {
+    val env = new java.util.HashMap[String, String]
+    env.put("prefix_a_b", "1")
+    env.put("prefix_c__d", "2")
+    env.put("HOME", "/home/x")
+    env.put("a_prefix_e", "3")
+    val props = ConfigImplUtil.envVariablesAsProperties(env, "prefix_")
+    assertEquals(2, props.size)
+    assertEquals("1", props.get("a.b"))
+    assertEquals("2", props.get("c-d"))
+  }
 }
