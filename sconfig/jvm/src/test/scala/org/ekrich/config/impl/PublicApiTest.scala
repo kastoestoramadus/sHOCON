@@ -1445,6 +1445,7 @@ class PublicApiTest extends TestUtils {
       assertEquals(1, overrides.getInt("testForceOverride.a"))
     } finally {
       System.clearProperty("config.override_with_env_vars")
+      ConfigImpl.reloadSystemPropertiesConfig()
     }
   }
 
@@ -1461,6 +1462,7 @@ class PublicApiTest extends TestUtils {
       assertEquals(1, loaded.getInt("testForceOverride.a"))
     } finally {
       System.clearProperty("config.override_with_env_vars")
+      ConfigImpl.reloadSystemPropertiesConfig()
     }
   }
 
