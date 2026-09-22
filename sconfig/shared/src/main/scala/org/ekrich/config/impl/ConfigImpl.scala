@@ -393,7 +393,7 @@ object ConfigImpl {
         )
     }
     PropertiesParser.fromStringMap(
-      newSimpleOrigin("env variables overrides"),
+      newEnvVariable("env variables overrides"),
       result
     )
   }

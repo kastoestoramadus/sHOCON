@@ -1482,6 +1482,16 @@ class PublicApiTest extends TestUtils {
   }
 
   @Test
+  def envVarOverrideIsHiddenWhenRendering(): Unit = {
+    val rendered = ConfigFactory
+      .systemEnvironmentOverrides()
+      .root
+      .render(ConfigRenderOptions.defaults.setShowEnvVariableValues(false))
+    assertTrue(rendered, rendered.contains("\"a\" : \"<env variable>\""))
+    assertFalse(rendered, rendered.contains("\"a\" : \"1\""))
+  }
+
+  @Test
   def exceptionSerializable(): Unit = {
     // ArrayList is a serialization problem so we want to cover it in tests
     val comments =
