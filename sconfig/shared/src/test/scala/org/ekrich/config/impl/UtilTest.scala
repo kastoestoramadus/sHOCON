@@ -3,6 +3,7 @@
  */
 package org.ekrich.config.impl
 
+import org.ekrich.config.ConfigException
 import org.ekrich.config.ConfigSyntax
 import org.junit.Assert._
 import org.junit._
@@ -130,5 +131,32 @@ class UtilTest extends TestUtilsShared {
   @Test
   def syntaxFromExtensionNull(): Unit = {
     assertNull(ConfigImplUtil.syntaxFromExtension(null))
+  }
+
+  @Test
+  def envVariableNameMangling(): Unit = {
+    assertEquals(
+      "a",
+      ConfigImplUtil.envVariableAsProperty("prefix_a", "prefix_")
+    )
+    assertEquals(
+      "a.b",
+      ConfigImplUtil.envVariableAsProperty("prefix_a_b", "prefix_")
+    )
+    assertEquals(
+      "a.b-c-d",
+      ConfigImplUtil.envVariableAsProperty("prefix_a_b__c__d", "prefix_")
+    )
+    assertEquals(
+      "a.b_c_d",
+      ConfigImplUtil.envVariableAsProperty("prefix_a_b___c___d", "prefix_")
+    )
+
+    intercept[ConfigException.BadPath] {
+      ConfigImplUtil.envVariableAsProperty("prefix_____", "prefix_")
+    }
+    intercept[ConfigException.BadPath] {
+      ConfigImplUtil.envVariableAsProperty("prefix_a_b___c____d", "prefix_")
+    }
   }
 }

@@ -1414,33 +1414,6 @@ class PublicApiTest extends TestUtils {
   }
 
   @Test
-  def envVariableNameMangling(): Unit = {
-    assertEquals(
-      "a",
-      ConfigImplUtil.envVariableAsProperty("prefix_a", "prefix_")
-    )
-    assertEquals(
-      "a.b",
-      ConfigImplUtil.envVariableAsProperty("prefix_a_b", "prefix_")
-    )
-    assertEquals(
-      "a.b-c-d",
-      ConfigImplUtil.envVariableAsProperty("prefix_a_b__c__d", "prefix_")
-    )
-    assertEquals(
-      "a.b_c_d",
-      ConfigImplUtil.envVariableAsProperty("prefix_a_b___c___d", "prefix_")
-    )
-
-    intercept[ConfigException.BadPath] {
-      ConfigImplUtil.envVariableAsProperty("prefix_____", "prefix_")
-    }
-    intercept[ConfigException.BadPath] {
-      ConfigImplUtil.envVariableAsProperty("prefix_a_b___c____d", "prefix_")
-    }
-  }
-
-  @Test
   def systemEnvironmentOverridesMangleNames(): Unit = {
     val overrides = ConfigFactory.systemEnvironmentOverrides()
     assertEquals(1, overrides.getInt("testForceOverride.a"))
@@ -1488,6 +1461,23 @@ class PublicApiTest extends TestUtils {
       assertEquals(1, loaded.getInt("testForceOverride.a"))
     } finally {
       System.clearProperty("config.override_with_env_vars")
+    }
+  }
+
+  @Test
+  def envVarOverrideWinsOverSystemPropertyInLoad(): Unit = {
+    try {
+      System.setProperty("config.override_with_env_vars", "true")
+      System.setProperty("testForceOverride.a", "7")
+      ConfigImpl.reloadSystemPropertiesConfig()
+      val loaded = ConfigFactory.load(
+        ConfigFactory.parseString("testForceOverride.a = 999")
+      )
+      assertEquals(1, loaded.getInt("testForceOverride.a"))
+    } finally {
+      System.clearProperty("config.override_with_env_vars")
+      System.clearProperty("testForceOverride.a")
+      ConfigImpl.reloadSystemPropertiesConfig()
     }
   }
 
