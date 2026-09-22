@@ -376,6 +376,49 @@ object ConfigImpl {
     EnvVariablesHolder.envVariables = loadEnvVariables
   }
 
+  private val ENV_VAR_OVERRIDE_PREFIX = "CONFIG_FORCE_"
+
+  private def loadEnvVariablesOverrides: AbstractConfigObject = {
+    val result = new ju.HashMap[String, String]
+    val entries = System.getenv.entrySet.iterator
+    while (entries.hasNext) {
+      val entry = entries.next
+      if (entry.getKey.startsWith(ENV_VAR_OVERRIDE_PREFIX))
+        result.put(
+          ConfigImplUtil.envVariableAsProperty(
+            entry.getKey,
+            ENV_VAR_OVERRIDE_PREFIX
+          ),
+          entry.getValue
+        )
+    }
+    PropertiesParser.fromStringMap(
+      newSimpleOrigin("env variables overrides"),
+      result
+    )
+  }
+
+  private object EnvVariablesOverridesHolder {
+    @volatile private[impl] var envVariables = loadEnvVariablesOverrides
+  }
+
+  def envVariablesOverridesAsConfigObject: AbstractConfigObject =
+    try {
+      EnvVariablesOverridesHolder.envVariables
+    } catch {
+      case e: ExceptionInInitializerError =>
+        throw ConfigImplUtil.extractInitializerError(e)
+    }
+
+  def envVariablesOverridesAsConfig: Config =
+    envVariablesOverridesAsConfigObject.toConfig
+
+  def reloadEnvVariablesOverridesConfig(): Unit = {
+    // ConfigFactory.invalidateCaches() relies on this having the side
+    // effect that it drops all caches
+    EnvVariablesOverridesHolder.envVariables = loadEnvVariablesOverrides
+  }
+
   def defaultReference(loader: ClassLoader): Config = {
     val updater = new Callable[Config] {
       override def call(): Config = {

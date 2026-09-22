@@ -1414,6 +1414,84 @@ class PublicApiTest extends TestUtils {
   }
 
   @Test
+  def envVariableNameMangling(): Unit = {
+    assertEquals(
+      "a",
+      ConfigImplUtil.envVariableAsProperty("prefix_a", "prefix_")
+    )
+    assertEquals(
+      "a.b",
+      ConfigImplUtil.envVariableAsProperty("prefix_a_b", "prefix_")
+    )
+    assertEquals(
+      "a.b-c-d",
+      ConfigImplUtil.envVariableAsProperty("prefix_a_b__c__d", "prefix_")
+    )
+    assertEquals(
+      "a.b_c_d",
+      ConfigImplUtil.envVariableAsProperty("prefix_a_b___c___d", "prefix_")
+    )
+
+    intercept[ConfigException.BadPath] {
+      ConfigImplUtil.envVariableAsProperty("prefix_____", "prefix_")
+    }
+    intercept[ConfigException.BadPath] {
+      ConfigImplUtil.envVariableAsProperty("prefix_a_b___c____d", "prefix_")
+    }
+  }
+
+  @Test
+  def systemEnvironmentOverridesMangleNames(): Unit = {
+    val overrides = ConfigFactory.systemEnvironmentOverrides()
+    assertEquals(1, overrides.getInt("testForceOverride.a"))
+    assertEquals(2, overrides.getInt("testForceOverride.b-c"))
+    assertEquals(3, overrides.getInt("testForceOverride.d_e"))
+    assertFalse(
+      "the CONFIG_FORCE_ prefixed key itself is not carried over",
+      overrides.hasPath("CONFIG_FORCE_testForceOverride_a")
+    )
+  }
+
+  @Test
+  def defaultOverridesIgnoresEnvByDefault(): Unit = {
+    assertEquals(
+      "config.override_with_env_vars is not set",
+      null,
+      System.getProperty("config.override_with_env_vars")
+    )
+    assertFalse(
+      ConfigFactory.defaultOverrides().hasPath("testForceOverride.a")
+    )
+  }
+
+  @Test
+  def defaultOverridesUsesEnvWhenEnabled(): Unit = {
+    try {
+      System.setProperty("config.override_with_env_vars", "true")
+      val overrides = ConfigFactory.defaultOverrides()
+      assertEquals(1, overrides.getInt("testForceOverride.a"))
+    } finally {
+      System.clearProperty("config.override_with_env_vars")
+    }
+  }
+
+  @Test
+  def envVarOverrideWinsOverExistingValue(): Unit = {
+    try {
+      System.setProperty("config.override_with_env_vars", "true")
+      val application =
+        ConfigFactory.parseString("testForceOverride.a = 999")
+      val loaded = ConfigFactory
+        .defaultOverrides()
+        .withFallback(application)
+        .resolve()
+      assertEquals(1, loaded.getInt("testForceOverride.a"))
+    } finally {
+      System.clearProperty("config.override_with_env_vars")
+    }
+  }
+
+  @Test
   def exceptionSerializable(): Unit = {
     // ArrayList is a serialization problem so we want to cover it in tests
     val comments =
