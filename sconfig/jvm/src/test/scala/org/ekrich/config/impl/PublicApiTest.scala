@@ -1466,6 +1466,23 @@ class PublicApiTest extends TestUtils {
   }
 
   @Test
+  def parseApplicationReplacementRejectsBadUrl(): Unit = {
+    try {
+      System.setProperty("config.url", "not a url")
+      val e = intercept[ConfigException.Generic] {
+        ConfigFactory.parseApplicationReplacement()
+      }
+      assertTrue(
+        "wrong exception: " + e.getMessage,
+        e.getMessage.contains("Bad URL in config.url")
+      )
+    } finally {
+      System.clearProperty("config.url")
+      ConfigImpl.reloadSystemPropertiesConfig()
+    }
+  }
+
+  @Test
   def defaultApplicationUsesParseApplicationReplacement(): Unit = {
     try {
       System.setProperty("config.resource", "test01.conf")
