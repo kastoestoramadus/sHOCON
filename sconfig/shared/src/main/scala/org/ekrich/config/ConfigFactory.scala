@@ -580,7 +580,7 @@ object ConfigFactory extends PlatformConfigFactory {
    * `a.b-c_d`.
    *
    * This method can return a global immutable singleton, so it's preferred over
-   * parsing system properties yourself.
+   * parsing environment variables yourself.
    *
    * [[#defaultOverrides()* defaultOverrides()]] will include the system
    * environment variable overrides if `config.override_with_env_vars` is set to
