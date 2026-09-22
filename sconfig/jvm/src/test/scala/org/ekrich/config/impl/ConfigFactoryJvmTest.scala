@@ -859,6 +859,14 @@ class ConfigFactoryJvmTest extends TestUtils {
                                      |        # env variables
                                      |        "<env variable>"
                                      |    ]""".stripMargin))
+    assertTrue(rendered1.contains("""|    "myList" : [
+                                     |        # env variables
+                                     |        "<env variable>",
+                                     |        # env variables
+                                     |        "<env variable>",
+                                     |        # env variables
+                                     |        "<env variable>"
+                                     |    ]""".stripMargin))
 
     val showRenderOpt = ConfigRenderOptions.defaults
     val rendered2 = config.root.render(showRenderOpt)
@@ -869,6 +877,55 @@ class ConfigFactoryJvmTest extends TestUtils {
                                      |        # env variables
                                      |        "C"
                                      |    ]""".stripMargin))
+  }
+
+  @Test
+  def envVariableListExpansion(): Unit = {
+    val config = ConfigFactory.load("env-variables")
+
+    val myList = config.getStringList("myList")
+    assertEquals(List("a", "b", "c"), myList.asScala.toList)
+
+    val myOptionalList = config.getStringList("myOptionalList")
+    assertEquals(List("a", "b", "c"), myOptionalList.asScala.toList)
+
+    assertFalse(
+      "undefined optional list expansion is absent",
+      config.hasPath("myOptionalUndefinedList")
+    )
+
+    val numList = config.getIntList("numList")
+    assertEquals(List(1, 2, 3), numList.asScala.toList.map(_.intValue))
+  }
+
+  @Test
+  def envVariableListExpansionConcatenation(): Unit = {
+    val config = ConfigFactory.load("env-variables")
+
+    // ["x", "y"] ${?MY_LIST[]}
+    assertEquals(
+      List("x", "y", "a", "b", "c"),
+      config.getStringList("prependedList").asScala.toList
+    )
+
+    // ${?MY_LIST[]} ["x", "y"]
+    assertEquals(
+      List("a", "b", "c", "x", "y"),
+      config.getStringList("appendedList").asScala.toList
+    )
+
+    // selfAppendedList = ["x"]; selfAppendedList = ${?selfAppendedList} ${?MY_LIST[]}
+    assertEquals(
+      List("x", "a", "b", "c"),
+      config.getStringList("selfAppendedList").asScala.toList
+    )
+
+    // an undefined optional list expansion leaves the rest of the
+    // concatenation intact
+    assertEquals(
+      List("x", "y"),
+      config.getStringList("appendedUndefined").asScala.toList
+    )
   }
 
   @Test

@@ -178,6 +178,12 @@ lazy val sconfig = crossProject(JVMPlatform, NativePlatform, JSPlatform)
         "SECRET_A" -> "A", // ConfigTest.renderShowEnvVariableValues
         "SECRET_B" -> "B", // ConfigTest.renderShowEnvVariableValues
         "SECRET_C" -> "C", // ConfigTest.renderShowEnvVariableValues
+        "MY_LIST_0" -> "a", // ConfigFactoryJvmTest.envVariableListExpansion*
+        "MY_LIST_1" -> "b", // ConfigFactoryJvmTest.envVariableListExpansion*
+        "MY_LIST_2" -> "c", // ConfigFactoryJvmTest.envVariableListExpansion*
+        "NUM_LIST_0" -> "1", // ConfigFactoryJvmTest.envVariableListExpansion
+        "NUM_LIST_1" -> "2", // ConfigFactoryJvmTest.envVariableListExpansion
+        "NUM_LIST_2" -> "3", // ConfigFactoryJvmTest.envVariableListExpansion
         "testClassesPath" -> {
           val isJSOrNative = crossProjectPlatform.value.identifier != "jvm"
           if (isJSOrNative) {
