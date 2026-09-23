@@ -37,9 +37,22 @@ sbt sconfigJVM/mimaReportBinaryIssues
 
 ## Code style
 
-- `main` sources avoid the Scala library: no Scala collections, `Option`, `Try` or Java↔Scala
-  conversions. The idioms that replace them are in
-  [docs/PORTING.md](docs/PORTING.md#java-to-scala).
+Which rules apply depends on where the code comes from:
+
+- **Ported code** has a counterpart in `lightbend/config`: most of `impl` and the public API.
+  It keeps the Java's shape, so later ports still diff line for line. See
+  [docs/PORTING.md](docs/PORTING.md#scope).
+- **sconfig-only code** covers what `lightbend/config` lacks: `ConfigFormatOptions` and the
+  rendering paths that read it, and the platform sources in `js/`, `jvm/`, `native/` and
+  `jvm-native/`. It is idiomatic Scala: `val` over `var`, expressions over statements, pattern
+  matching, and `@tailrec` recursion over a `while` with a flag. Keep it in its own methods, so
+  ported methods stay comparable with the Java.
+- **All `main` code** avoids the Scala library: Java collections in the API and inside methods,
+  no Scala collections, `Option` or `Try`, and no Java↔Scala conversions. Scala language features
+  are fine. Tests may use the Scala library freely.
+
+Everywhere:
+
 - Touch only what the change needs: no drive-by reformatting, import regrouping or renames.
   Imports stay one package per line, in alphabetical order.
 - Methods without side effects drop `()`. Names say what a value is, in the present tense; never

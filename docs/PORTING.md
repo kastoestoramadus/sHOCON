@@ -14,6 +14,21 @@ allowed, and the PR names both:
 - An **addition** does work the original does not do. It stays in the port only when the port
   needs it to work in sconfig, in its own commits after the port. Anything else is a separate PR.
 
+## Scope
+
+These rules cover ported code: any class, method or block with a counterpart in
+`lightbend/config`, including one that sconfig has changed since. When a port touches such code,
+its lines keep the Java's shape.
+
+Code that exists only in sconfig, such as `ConfigFormatOptions`, the rendering paths that read it
+and the platform sources, is not bound by the Java's shape. It follows the Scala style in
+[AGENTS.md](../AGENTS.md#code-style). Where sconfig-only logic sits inside a ported class, keep
+it in its own methods, so the ported methods still diff against the Java. The restriction on the
+Scala library applies to both kinds of code.
+
+Some older ported code already has Scala shapes, such as the `@tailrec` recursion in `Tokenizer`,
+`BadMap` and `ConfigDelayedMergeObject`. Leave it as it is unless a port changes those lines.
+
 ## Steps
 
 1. **Check it is not done yet**: #29, the open PRs, and `git log --grep "#N"`.
