@@ -48,7 +48,9 @@ Which rules apply depends on where the code comes from:
   matching, and `@tailrec` recursion over a `while` with a flag. Keep it in its own methods, so
   ported methods stay comparable with the Java.
 - **All `main` code** avoids the Scala library: Java collections in the API and inside methods,
-  no Scala collections, `Option` or `Try`, and no Java↔Scala conversions. Scala language features
+  no Scala collections, `Option` or `Try`, and no Java↔Scala conversions. For collection work use
+  `ScalaOps` on Java collections (`exists`, `forall`, `foldLeft`, `findFold`); where Scala would
+  use `Option`, use `null` or, in the public API, `java.util.Optional`. Scala language features
   are fine. Tests may use the Scala library freely.
 
 Everywhere:
