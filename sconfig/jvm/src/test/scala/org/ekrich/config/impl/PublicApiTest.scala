@@ -1430,7 +1430,7 @@ class PublicApiTest extends TestUtils {
       null,
       System.getProperty("config.url")
     )
-    assertEquals(None, ConfigFactory.parseApplicationReplacement())
+    assertFalse(ConfigFactory.parseApplicationReplacement().isPresent)
   }
 
   @Test
@@ -1438,7 +1438,7 @@ class PublicApiTest extends TestUtils {
     try {
       System.setProperty("config.resource", "test01.conf")
       val replacement = ConfigFactory.parseApplicationReplacement()
-      assertTrue("replacement is present", replacement.isDefined)
+      assertTrue("replacement is present", replacement.isPresent)
       assertEquals(42, replacement.get.getInt("ints.fortyTwo"))
     } finally {
       System.clearProperty("config.resource")

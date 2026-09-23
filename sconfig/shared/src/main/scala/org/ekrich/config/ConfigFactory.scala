@@ -1016,10 +1016,10 @@ object ConfigFactory extends PlatformConfigFactory {
    * classpath fallback.
    *
    * @return
-   *   the replacement config if one of the three system properties was set, or
-   *   `None` if none was set
+   *   a [[java.util.Optional]] containing any specified replacement, or
+   *   `Optional.empty()` if none was specified
    */
-  def parseApplicationReplacement(): Option[Config] =
+  def parseApplicationReplacement(): ju.Optional[Config] =
     parseApplicationReplacement(ConfigParseOptions.defaults)
 
   /**
@@ -1030,10 +1030,10 @@ object ConfigFactory extends PlatformConfigFactory {
    * @param loader
    *   the class loader
    * @return
-   *   the replacement config if one of the three system properties was set, or
-   *   `None` if none was set
+   *   a [[java.util.Optional]] containing any specified replacement, or
+   *   `Optional.empty()` if none was specified
    */
-  def parseApplicationReplacement(loader: ClassLoader): Option[Config] =
+  def parseApplicationReplacement(loader: ClassLoader): ju.Optional[Config] =
     parseApplicationReplacement(
       ConfigParseOptions.defaults.setClassLoader(loader)
     )
@@ -1045,12 +1045,12 @@ object ConfigFactory extends PlatformConfigFactory {
    * @param parseOptions
    *   parse options
    * @return
-   *   the replacement config if one of the three system properties was set, or
-   *   `None` if none was set
+   *   a [[java.util.Optional]] containing any specified replacement, or
+   *   `Optional.empty()` if none was specified
    */
   def parseApplicationReplacement(
       parseOptions: ConfigParseOptions
-  ): Option[Config] = {
+  ): ju.Optional[Config] = {
     var specified = 0
     var resource = System.getProperty("config.resource")
     if (resource != null) specified += 1
@@ -1060,7 +1060,7 @@ object ConfigFactory extends PlatformConfigFactory {
     if (url != null) specified += 1
 
     if (specified == 0) {
-      None
+      ju.Optional.empty()
     } else if (specified > 1) {
       throw new ConfigException.Generic(
         "You set more than one of config.file='" + file + "', config.url='" + url + "', config.resource='" + resource + "'; don't know which one to use!"
@@ -1076,7 +1076,7 @@ object ConfigFactory extends PlatformConfigFactory {
           ensureClassLoader(overrideOptions, "parseApplicationReplacement")
         // this deliberately does not parseResourcesAnySyntax; if
         // people want that they can use an include statement.
-        Some(
+        ju.Optional.of(
           ConfigFactory.parseResources(
             withLoader.getClassLoader,
             resource,
@@ -1084,9 +1084,10 @@ object ConfigFactory extends PlatformConfigFactory {
           )
         )
       } else if (file != null) {
-        Some(ConfigFactory.parseFile(new File(file), overrideOptions))
+        ju.Optional.of(ConfigFactory.parseFile(new File(file), overrideOptions))
       } else {
-        try Some(ConfigFactory.parseURL(new URL(url), overrideOptions))
+        try
+          ju.Optional.of(ConfigFactory.parseURL(new URL(url), overrideOptions))
         catch {
           case e: java.net.MalformedURLException =>
             throw new ConfigException.Generic(

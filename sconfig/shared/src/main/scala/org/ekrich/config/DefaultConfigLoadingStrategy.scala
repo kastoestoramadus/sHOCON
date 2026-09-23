@@ -15,7 +15,7 @@ class DefaultConfigLoadingStrategy extends ConfigLoadingStrategy {
       )
     ConfigFactory
       .parseApplicationReplacement(parseOptions)
-      .getOrElse(
+      .orElseGet(() =>
         ConfigFactory.parseResourcesAnySyntax("application", parseOptions)
       )
   }
