@@ -792,11 +792,17 @@ class ConfigFactoryJvmTest extends TestUtils {
         val resolvedParsed =
           ConfigFactory.parseString(resolvedRender, ConfigParseOptions.defaults)
         try {
-          assertEquals(
-            s"for i=$i unresolved options=" + renderOptions,
-            conf.root,
-            unresolvedParsed.root
-          )
+          // test03 and test10 include files inside a block, so their
+          // substitutions are relativized. Since lightbend/config#805 those
+          // render with their original file-relative path, and reparsing the
+          // render standalone cannot restore the include prefix. The resolved
+          // round trip below still holds for every fixture.
+          if (i != 3 && i != 10)
+            assertEquals(
+              s"for i=$i unresolved options=" + renderOptions,
+              conf.root,
+              unresolvedParsed.root
+            )
           assertEquals(
             s"for i=$i resolved options=" + renderOptions,
             resolved.root,
