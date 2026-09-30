@@ -17,6 +17,34 @@ import ScalaOps.*
 
 @SerialVersionUID(2L)
 object SimpleConfigObject {
+
+  // These render through ConfigDelayedMerge.render, which spells the stack out
+  // as repeated entries and so needs the key. Rendered as a bare value they
+  // fall back to a comment banner that does not parse, so they can neither be
+  // compressed into a path nor have their comments printed by the container.
+  private[impl] def needsItsKey(v: AbstractConfigValue): Boolean =
+    v.isInstanceOf[ConfigDelayedMerge] || v
+      .isInstanceOf[ConfigDelayedMergeObject]
+
+  // True if v or a value inside it ignores fallbacks. Scalars always ignore
+  // fallbacks, so only objects and pending values count. A pending merge
+  // counts if it ignores fallbacks itself or if a value in its stack does,
+  // e.g. { nested = null, nested = ${p} } below an object from ${q}.
+  private[impl] def carriesIgnoredFallback(v: AbstractConfigValue): Boolean =
+    if (v.isInstanceOf[SimpleConfigObject])
+      v.asInstanceOf[SimpleConfigObject].hasIgnoredFallback
+    else if (!v.isInstanceOf[Unmergeable]) false
+    else if (v.ignoresFallbacks) true
+    else {
+      // references and concatenations list only themselves
+      val it = v.asInstanceOf[Unmergeable].unmergedValues.iterator
+      while (it.hasNext()) {
+        val unmerged = it.next()
+        if ((unmerged ne v) && carriesIgnoredFallback(unmerged)) return true
+      }
+      false
+    }
+
   final private[impl] class ResolveModifier private[impl] (
       var context: ResolveContext,
       val source: ResolveSource
@@ -172,6 +200,20 @@ final class SimpleConfigObject(
       "creating config object with null map"
     )
   final private var resolved = status eq ResolveStatus.RESOLVED
+  // An object "ignores fallbacks" when a null or a non-object came before it
+  // in its key's merge history. That is a merge instruction for that key only;
+  // a substitution copies the final value without it (see ConfigReference).
+  // True if this object or any value below it ignores fallbacks.
+  final private var hasIgnoredFallback = {
+    var carries = ignoresFallbacks
+    val values = value.values.iterator
+    while (values.hasNext()) {
+      val v = values.next()
+      if (!carries && SimpleConfigObject.carriesIgnoredFallback(v))
+        carries = true
+    }
+    carries
+  }
   // Kind of an expensive debug check. Comment out?
   if (status ne ResolveStatus.fromValues(value.values))
     throw new ConfigException.BugOrBroken("Wrong resolved status on " + this)
@@ -324,6 +366,78 @@ final class SimpleConfigObject(
   override def withFallbacksIgnored(): SimpleConfigObject =
     if (ignoresFallbacks) this
     else newCopy(resolveStatus, origin, true)
+
+  // A restricted resolve (a lookup resolves only the path it needs) or a
+  // partial one can leave pending merges below this object that carry
+  // ignored fallbacks. Merged into the receiving key as they are, they would
+  // drop the receiver's own values for that key, and a lookup would memoize
+  // that. Replace each with a reference to the same path in the source
+  // instead; it resolves later like any other reference, and the substituted
+  // value then no longer ignores fallbacks.
+  //
+  // The replacement is root-relative, like the reference it comes from. The
+  // value it replaces may have been found through a source in which a delayed
+  // merge was replaced by its remainder (a self-referential key such as
+  // a = ${a} {...}), so the replacement can lead back to that key; the outer
+  // reference's cycle marker is what keeps that from looping.
+  private[impl] def deferPendingIgnoredFallbacks(
+      reference: ConfigReference,
+      path: Path
+  ): SimpleConfigObject =
+    if (resolved || !hasIgnoredFallback) this
+    else
+      modify(new AbstractConfigValue.NoExceptionsModifier() {
+        override def modifyChild(
+            key: String,
+            child: AbstractConfigValue
+        ): AbstractConfigValue =
+          if (!SimpleConfigObject.carriesIgnoredFallback(child)) child
+          else {
+            val childPath = Path.newKey(key).prepend(path)
+            if (child.isInstanceOf[SimpleConfigObject])
+              child
+                .asInstanceOf[SimpleConfigObject]
+                .deferPendingIgnoredFallbacks(reference, childPath)
+            else reference.withPath(childPath, child.origin)
+          }
+      })
+
+  // This subtree with every object's ignored fallbacks cleared.
+  private[impl] def withFallbacksNotIgnored(): SimpleConfigObject =
+    if (!hasIgnoredFallback) this
+    else
+      // Shared subtrees stay shared and are copied once.
+      withFallbacksNotIgnored(
+        new ju.IdentityHashMap[SimpleConfigObject, SimpleConfigObject]
+      )
+
+  private def withFallbacksNotIgnored(
+      memo: ju.Map[SimpleConfigObject, SimpleConfigObject]
+  ): SimpleConfigObject =
+    if (!hasIgnoredFallback) this
+    else {
+      val cached = memo.get(this)
+      if (cached != null) cached
+      else {
+        val copy = modify(new AbstractConfigValue.NoExceptionsModifier() {
+          override def modifyChild(
+              key: String,
+              child: AbstractConfigValue
+          ): AbstractConfigValue =
+            if (child.isInstanceOf[SimpleConfigObject])
+              child
+                .asInstanceOf[SimpleConfigObject]
+                .withFallbacksNotIgnored(memo)
+            else child
+        })
+        val result =
+          if (copy.ignoresFallbacks)
+            copy.newCopy(copy.resolveStatus, copy.origin, false)
+          else copy
+        memo.put(this, result)
+        result
+      }
+    }
 
   override def resolveStatus: ResolveStatus =
     ResolveStatus.fromBoolean(resolved)
@@ -524,7 +638,8 @@ final class SimpleConfigObject(
           nested.tryCompressToMultipathRec(
             newAggregate
           )
-        case other: AbstractConfigValue =>
+        case other: AbstractConfigValue
+            if !SimpleConfigObject.needsItsKey(other) =>
           Some(MultiPathEntry(newAggregate, other))
         case _ => returnAsIs
       }
@@ -549,35 +664,47 @@ final class SimpleConfigObject(
       options: ConfigRenderOptions
   ): Unit = {
     if (isEmpty) sb.append("{}")
-    else {
-      tryCompressToMultipath(options) match {
-        case Some(MultiPathEntry(aggKey, leafValue)) =>
-          // remove space after renderAtKey
-          // NASTY, better design welcomed
-          val lastCharIdx = sb.length() - 1
-          if (options.getFormatted && lastCharIdx > 0 && sb.charAt(
-                lastCharIdx
-              ) == ' ')
-            sb.deleteCharAt(lastCharIdx)
-          // extend multipath
-          if (sb.length() > 0) {
-            val newLastChar = sb.charAt(
-              sb.length() - 1
-            )
-            if (newLastChar == '"' || !ConfigImplUtil.isForbiddenUnquotedChar(
-                  newLastChar // should extend path only on identifier
-                )) sb.append('.')
-          }
-
-          leafValue.renderWithRenderedKey(sb, s"$aggKey", options)
-          leafValue.renderValue(sb, indentVal, false, options)
-
-        case _ =>
-          renderValueAsMultiLineObject(sb, indentVal, atRoot, options)
-      }
-    }
+    else renderValueAsMultiLineObject(sb, indentVal, atRoot, options)
     if (atRoot && options.getFormatted && options.getConfigFormatOptions.getNewLineAtEnd)
       sb.append('\n')
+  }
+
+  // `key { a { b = v } }` renders as `key.a.b = v`. Only the caller that wrote
+  // the key can compress, so it passes the rendered key in; null means there
+  // is no key, as inside an array element.
+  private[impl] def renderSimplified(
+      sb: jl.StringBuilder,
+      indentVal: Int,
+      renderedPrefix: String,
+      options: ConfigRenderOptions
+  ): Boolean =
+    tryCompressToMultipath(options) match {
+      case Some(MultiPathEntry(aggKey, leafValue)) =>
+        val path =
+          if (renderedPrefix == null) aggKey else s"$renderedPrefix.$aggKey"
+        leafValue.renderWithRenderedKey(sb, path, options)
+        leafValue.renderValue(sb, indentVal, false, options)
+        true
+      case _ => false
+    }
+
+  override private[impl] def render(
+      sb: jl.StringBuilder,
+      indentVal: Int,
+      atRoot: Boolean,
+      atKey: String,
+      options: ConfigRenderOptions
+  ): Unit = {
+    if (atKey == null) renderValue(sb, indentVal, atRoot, options)
+    else {
+      val renderedKey =
+        if (options.getJson) ConfigImplUtil.renderJsonString(atKey)
+        else ConfigImplUtil.renderStringUnquotedIfPossible(atKey)
+      if (!renderSimplified(sb, indentVal, renderedKey, options)) {
+        renderWithRenderedKey(sb, renderedKey, options)
+        renderValue(sb, indentVal, atRoot, options)
+      }
+    }
   }
 
   private def renderValueAsMultiLineObject(
@@ -618,7 +745,8 @@ final class SimpleConfigObject(
           sb.append("\n")
         }
       }
-      printCommentsToBuffer(sb, options, innerIndent, v.origin.comments)
+      if (!SimpleConfigObject.needsItsKey(v))
+        printCommentsToBuffer(sb, options, innerIndent, v.origin.comments)
 
       AbstractConfigValue.indent(sb, innerIndent, options)
       v.render(sb, innerIndent, false /* atRoot */, k, options)
