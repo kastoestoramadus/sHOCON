@@ -836,6 +836,38 @@ class ConfParserTest extends TestUtils {
   }
 
   @Test
+  def includedSubstitutionRendersWithOriginalPath(): Unit = {
+    val valuesInclude = jsonQuotedResourceFile("values.conf")
+    val innerInclude = jsonQuotedResourceFile("config-file2.conf")
+    val conf = ConfigFactory.parseString(
+      s"""include file($valuesInclude)
+         |outer { include file($innerInclude) }""".stripMargin
+    )
+
+    assertEquals(
+      "http://localhost",
+      conf.resolve().getString("outer.inner")
+    )
+
+    val rendered = conf.root.render(
+      ConfigRenderOptions.defaults.setJson(false).setOriginComments(false)
+    )
+    val expected = """outer {
+                     |    inner = ${value.url}
+                     |}
+                     |value {
+                     |    url = "http://localhost"
+                     |}
+                     |""".stripMargin
+    assertEquals(expected, rendered)
+
+    assertEquals(
+      "http://localhost",
+      ConfigFactory.parseString(rendered).resolve().getString("outer.inner")
+    )
+  }
+
+  @Test
   def includeFileUnclosedParens(): Unit = {
     val e = intercept[ConfigException.Parse] {
       ConfigFactory.parseString(
