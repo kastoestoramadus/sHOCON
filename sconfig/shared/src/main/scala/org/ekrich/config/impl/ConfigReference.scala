@@ -124,6 +124,8 @@ final class ConfigReference(
       atRoot: Boolean,
       options: ConfigRenderOptions
   ): Unit = {
-    sb.append(expression.toString)
+    sb.append(
+      expression.changePath(expression.path.subPath(prefixLength)).toString
+    )
   }
 }
