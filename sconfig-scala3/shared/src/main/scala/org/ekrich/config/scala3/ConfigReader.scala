@@ -40,8 +40,10 @@ object ConfigReader {
   ): Either[ConfigReadError, A] =
     try Right(body)
     catch {
-      // Null extends Missing, so it has to come first
-      case _: ConfigException.Null        => Left(Null(path))
+      // Null extends Missing, so it has to come first. The exception does not say which
+      // path is null: below a null parent nothing is set at `path`.
+      case _: ConfigException.Null =>
+        Left(if (isNullAt(config, path)) Null(path) else Missing(path))
       case _: ConfigException.Missing     => Left(Missing(path))
       case _: ConfigException.NotResolved => Left(Unresolved(path))
       case _: ConfigException.WrongType   =>
@@ -50,6 +52,10 @@ object ConfigReader {
         // a parent of the path is not an object, so there is nothing at the path
         catch { case _: ConfigException.WrongType => Left(Missing(path)) }
     }
+
+  private def isNullAt(config: Config, path: String): Boolean =
+    try config.getIsNull(path)
+    catch { case _: ConfigException => false }
 
   private def leaf[A](expected: String)(
       get: (Config, String) => A
