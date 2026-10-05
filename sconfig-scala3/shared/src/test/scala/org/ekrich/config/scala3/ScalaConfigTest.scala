@@ -344,6 +344,26 @@ class ScalaConfigTest {
     assertSame(empty, empty.asScalaConfig.asConfig)
   }
 
+  // the migration example of the README
+
+  @Test
+  def gradualMigrationRoundTrip(): Unit = {
+    val raw = parse("""
+      hosts.labels = [a, b]
+      users.password.bcrypt-cost = 12
+    """)
+    val labels = raw.asScalaConfig
+      .readOption[Set[String]]("hosts.labels")
+      .map(_.getOrElse(Set.empty))
+    val cost = raw.asScalaConfig
+      .readOption[Int]("users.password.bcrypt-cost")
+      .map(_.getOrElse(10))
+    assertEquals(Right(Set("a", "b")), labels)
+    assertEquals(Right(12), cost)
+    def someLibrary(c: Config): Int = c.getInt("users.password.bcrypt-cost")
+    assertEquals(12, someLibrary(raw.asScalaConfig.asConfig))
+  }
+
   // (e) -Yexplicit-nulls is on for this module and user code needs no .nn
 
   @Test
