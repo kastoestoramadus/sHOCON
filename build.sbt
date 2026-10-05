@@ -263,6 +263,11 @@ lazy val sconfigScala3 = crossProject(JVMPlatform, NativePlatform, JSPlatform)
       s"-release:${targetJDKVersion(scala3)}",
       "-Yexplicit-nulls"
     ),
+    // A plain `sbt compile` runs on the default Scala 2.13, which cannot build this module:
+    // it has no sources there. Use `++3.9.0` or `+` to build and test it.
+    Compile / sources := (if (isScala3.value) (Compile / sources).value
+                          else Nil),
+    Test / sources := (if (isScala3.value) (Test / sources).value else Nil),
     testOptions += Tests.Argument(TestFrameworks.JUnit, "-a", "-s", "-v"),
     Test / exportJars := false
   )
