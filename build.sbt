@@ -133,6 +133,9 @@ lazy val root = (project in file("."))
     sconfigJVM,
     sconfigNative,
     sconfigJS,
+    sconfigScala3JVM,
+    sconfigScala3Native,
+    sconfigScala3JS,
     `scalafix-rules`,
     `scalafix-tests`,
     simpleLibScala,
@@ -248,6 +251,35 @@ lazy val sconfig = crossProject(JVMPlatform, NativePlatform, JSPlatform)
     )
   )
 
+// Opt-in Scala 3 API over the unchanged core: nothing in `sconfig` depends on it.
+lazy val sconfigScala3 = crossProject(JVMPlatform, NativePlatform, JSPlatform)
+  .crossType(CrossType.Full)
+  .in(file("sconfig-scala3"))
+  .dependsOn(sconfig)
+  .settings(
+    name := "sconfig-scala3",
+    crossScalaVersions := Seq(scala3),
+    scalacOptions ++= dotcOpts ++ Seq(
+      s"-release:${targetJDKVersion(scala3)}",
+      "-Yexplicit-nulls"
+    ),
+    testOptions += Tests.Argument(TestFrameworks.JUnit, "-a", "-s", "-v"),
+    Test / exportJars := false
+  )
+  .jvmSettings(
+    libraryDependencies += "com.github.sbt" % "junit-interface" % "0.13.3" % Test,
+    Test / parallelExecution := false,
+    Test / fork := true
+  )
+  .nativeConfigure(_.enablePlugins(ScalaNativeJUnitPlugin))
+  .nativeSettings(
+    libraryDependencies += "org.ekrich" %% "sjavatime" % javaTime % "provided"
+  )
+  .jsConfigure(_.enablePlugins(ScalaJSJUnitPlugin))
+  .jsSettings(
+    libraryDependencies += "org.ekrich" %% "sjavatime" % javaTime % "provided"
+  )
+
 lazy val `scalafix-rules` = (project in file("scalafix/rules"))
   .settings(
     moduleName := "sconfig-scalafix",
@@ -297,6 +329,9 @@ lazy val sconfigJVM = sconfig.jvm
   .dependsOn(testLibJVM % "test->test")
 lazy val sconfigNative = sconfig.native
 lazy val sconfigJS = sconfig.js
+lazy val sconfigScala3JVM = sconfigScala3.jvm
+lazy val sconfigScala3Native = sconfigScala3.native
+lazy val sconfigScala3JS = sconfigScala3.js
 
 lazy val ignoredABIProblems = {
   import com.typesafe.tools.mima.core._
