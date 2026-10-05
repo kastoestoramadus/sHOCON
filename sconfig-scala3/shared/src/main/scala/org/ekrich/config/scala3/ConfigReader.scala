@@ -73,8 +73,7 @@ object ConfigReader {
   given ConfigReader[ConfigValue] = leaf("any")(_.getValue(_))
 
   /**
-   * Nanosecond precision; a duration beyond about 292 years does not fit and
-   * throws.
+   * Nanosecond precision; the core clamps a duration beyond about 292 years.
    */
   given ConfigReader[FiniteDuration] =
     leaf("STRING or NUMBER") { (c, p) =>
@@ -116,7 +115,7 @@ object ConfigReader {
         }
       }
 
-  given [A](using reader: ConfigReader[A]): ConfigReader[Set[A]] =
+  given [A: ConfigReader]: ConfigReader[Set[A]] =
     (config, path) =>
       summon[ConfigReader[List[A]]].read(config, path).map(_.toSet)
 

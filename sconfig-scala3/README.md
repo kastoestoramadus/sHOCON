@@ -85,7 +85,8 @@ No zero-cost claim is made.
 - `List`, `Set` and `Map` copy into new immutable collections. Each element is read through
   `ConfigValue.atKey`, which allocates a one-key config per element; `getIntList` does not.
 - `Map` is the default immutable `Map`: key order is kept only for up to four entries.
-- `FiniteDuration` has nanosecond resolution and throws `ArithmeticException` beyond about 292 years.
+- Durations are read in nanoseconds. As in the core, a value beyond about 292 years is silently clamped
+  to `Long.MaxValue` nanoseconds (`java.time.Duration` too).
 
 ## Limits
 
