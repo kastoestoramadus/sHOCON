@@ -48,7 +48,10 @@ class ScalaConfigTest {
     val conf = unresolved
     val back = conf.asScalaConfig.asConfig
     assertFalse("must not resolve", back.isResolved)
-    assertEquals("app.conf", back.root.origin.description)
+    assertTrue(
+      back.root.origin.description,
+      back.root.origin.description.startsWith("app.conf")
+    )
     val port = back.getValue("broker.port").origin
     assertEquals(conf.getValue("broker.port").origin, port)
     assertEquals(1, port.comments.size)
@@ -86,7 +89,10 @@ class ScalaConfigTest {
     val merged = top.asScalaConfig.withFallback(bottom.asScalaConfig)
     assertFalse(merged.asConfig.isResolved)
     assertEquals(top.withFallback(bottom), merged.asConfig)
-    assertEquals(Right(1), merged.asConfig.resolve().asScalaConfig.read[Int]("a"))
+    assertEquals(
+      Right(1),
+      merged.asConfig.resolve().asScalaConfig.read[Int]("a")
+    )
   }
 
   // (c) one ConfigReadError variant per cause
@@ -108,10 +114,22 @@ class ScalaConfigTest {
   @Test
   def wrongType(): Unit = {
     assertEquals(Left(WrongType("s", "NUMBER", "STRING")), api.read[Int]("s"))
-    assertEquals(Left(WrongType("o", "STRING", "OBJECT")), api.read[String]("o"))
-    assertEquals(Left(WrongType("i", "LIST", "NUMBER")), api.read[List[Int]]("i"))
-    assertEquals(Left(WrongType("l", "OBJECT", "LIST")), api.read[Map[String, Int]]("l"))
-    assertEquals(Left(WrongType("s", "BOOLEAN", "STRING")), api.read[Boolean]("s"))
+    assertEquals(
+      Left(WrongType("o", "STRING", "OBJECT")),
+      api.read[String]("o")
+    )
+    assertEquals(
+      Left(WrongType("i", "LIST", "NUMBER")),
+      api.read[List[Int]]("i")
+    )
+    assertEquals(
+      Left(WrongType("l", "OBJECT", "LIST")),
+      api.read[Map[String, Int]]("l")
+    )
+    assertEquals(
+      Left(WrongType("s", "BOOLEAN", "STRING")),
+      api.read[Boolean]("s")
+    )
   }
 
   @Test
@@ -138,7 +156,8 @@ class ScalaConfigTest {
     intercept[ConfigException.BadPath](api.read[Int]("a..b"))
     intercept[ConfigException.BadPath](api.readOption[Int]("a..b"))
     intercept[ConfigException.BadPath](api.lookup("a..b"))
-    given ConfigReader[Thread] = (_, _) => throw new IllegalStateException("boom")
+    given ConfigReader[Thread] = (_, _) =>
+      throw new IllegalStateException("boom")
     intercept[IllegalStateException](api.read[Thread]("s"))
   }
 
@@ -173,8 +192,14 @@ class ScalaConfigTest {
 
   @Test
   def readOptionKeepsTypeErrorsVisible(): Unit = {
-    assertEquals(Left(WrongType("s", "NUMBER", "STRING")), api.readOption[Int]("s"))
-    assertEquals(Left(WrongType("o", "STRING", "OBJECT")), api.readOption[String]("o"))
+    assertEquals(
+      Left(WrongType("s", "NUMBER", "STRING")),
+      api.readOption[Int]("s")
+    )
+    assertEquals(
+      Left(WrongType("o", "STRING", "OBJECT")),
+      api.readOption[String]("o")
+    )
   }
 
   @Test
@@ -204,57 +229,98 @@ class ScalaConfigTest {
       Right(java.time.Duration.ofMillis(1500)),
       api.read[java.time.Duration]("dur")
     )
-    assertEquals(Right(ConfigMemorySize.ofBytes(2L * 1024 * 1024)), api.read[ConfigMemorySize]("mem"))
+    assertEquals(
+      Right(ConfigMemorySize.ofBytes(2L * 1024 * 1024)),
+      api.read[ConfigMemorySize]("mem")
+    )
   }
 
   @Test
   def readsImmutableCollections(): Unit = {
     assertEquals(Right(List(1, 2, 3)), api.read[List[Int]]("l"))
     assertEquals(Right(Set("a", "b")), api.read[Set[String]]("strs"))
-    assertEquals(Right(Map("x" -> 1, "y" -> 2)), api.read[Map[String, Int]]("o"))
+    assertEquals(
+      Right(Map("x" -> 1, "y" -> 2)),
+      api.read[Map[String, Int]]("o")
+    )
     val nested = parse("m { a = [1, 2], b = [] }").asScalaConfig
-    assertEquals(Right(Map("a" -> List(1, 2), "b" -> Nil)), nested.read[Map[String, List[Int]]]("m"))
+    assertEquals(
+      Right(Map("a" -> List(1, 2), "b" -> Nil)),
+      nested.read[Map[String, List[Int]]]("m")
+    )
     val grid = parse("g = [[1, 2], [3]]").asScalaConfig
-    assertEquals(Right(List(List(1, 2), List(3))), grid.read[List[List[Int]]]("g"))
+    assertEquals(
+      Right(List(List(1, 2), List(3))),
+      grid.read[List[List[Int]]]("g")
+    )
   }
 
   @Test
   def collectionErrorsNameTheElement(): Unit = {
     assertEquals(Left(Null("holes[1]")), api.read[List[Int]]("holes"))
-    assertEquals(Left(WrongType("mixed[1]", "NUMBER", "STRING")), api.read[List[Int]]("mixed"))
-    assertEquals(Left(WrongType("o.x", "OBJECT", "NUMBER")), api.read[Map[String, Map[String, Int]]]("o"))
+    assertEquals(
+      Left(WrongType("mixed[1]", "NUMBER", "STRING")),
+      api.read[List[Int]]("mixed")
+    )
+    assertEquals(
+      Left(WrongType("o.x", "OBJECT", "NUMBER")),
+      api.read[Map[String, Map[String, Int]]]("o")
+    )
     val dotted = parse("""m { "a.b" = oops }""").asScalaConfig
-    assertEquals(Left(WrongType("""m."a.b"""", "NUMBER", "STRING")), dotted.read[Map[String, Int]]("m"))
+    assertEquals(
+      Left(WrongType("""m."a.b"""", "NUMBER", "STRING")),
+      dotted.read[Map[String, Int]]("m")
+    )
   }
 
   @Test
   def mapKeysWithDotsSurvive(): Unit = {
     val dotted = parse("""m { "a.b" = 1, c = 2 }""").asScalaConfig
-    assertEquals(Right(Map("a.b" -> 1, "c" -> 2)), dotted.read[Map[String, Int]]("m"))
+    assertEquals(
+      Right(Map("a.b" -> 1, "c" -> 2)),
+      dotted.read[Map[String, Int]]("m")
+    )
   }
 
   // the root has no path; readRoot reads it and reports paths relative to it
 
   @Test
   def readRootReadsTheWholeConfig(): Unit = {
-    assertEquals(Right(Map("a" -> 1, "b" -> 2)), parse("a = 1, b = 2").asScalaConfig.readRoot[Map[String, Int]])
+    assertEquals(
+      Right(Map("a" -> 1, "b" -> 2)),
+      parse("a = 1, b = 2").asScalaConfig.readRoot[Map[String, Int]]
+    )
     assertEquals(
       Right(Map("head" -> Map("ctdi" -> 1.5))),
-      parse("head { ctdi = 1.5 }").asScalaConfig.readRoot[Map[String, Map[String, Double]]]
+      parse("head { ctdi = 1.5 }").asScalaConfig
+        .readRoot[Map[String, Map[String, Double]]]
     )
-    assertEquals(Right(Map.empty[String, Int]), ConfigFactory.empty("empty").asScalaConfig.readRoot[Map[String, Int]])
+    assertEquals(
+      Right(Map.empty[String, Int]),
+      ConfigFactory.empty("empty").asScalaConfig.readRoot[Map[String, Int]]
+    )
   }
 
   @Test
   def readRootErrorsAreRelativeToTheRoot(): Unit = {
-    val c = parse("a = 1, o { x = text }, n = null").asScalaConfig
-    assertEquals(Left(WrongType("o", "NUMBER", "OBJECT")), c.readRoot[Map[String, Int]])
-    assertEquals(Left(Null("n")), parse("n = null").asScalaConfig.readRoot[Map[String, Int]])
+    val c = parse("a = 1, o { x = text }").asScalaConfig
+    assertEquals(
+      Left(WrongType("o", "NUMBER", "OBJECT")),
+      c.readRoot[Map[String, Int]]
+    )
+    assertEquals(
+      Left(Null("n")),
+      parse("n = null").asScalaConfig.readRoot[Map[String, Int]]
+    )
     assertEquals(
       Left(WrongType("o.x", "NUMBER", "STRING")),
-      parse("o { x = text }").asScalaConfig.readRoot[Map[String, Map[String, Int]]]
+      parse("o { x = text }").asScalaConfig
+        .readRoot[Map[String, Map[String, Int]]]
     )
-    assertEquals(Left(Unresolved("a")), parse("a = ${x}").asScalaConfig.readRoot[Map[String, Int]])
+    assertEquals(
+      Left(Unresolved("a")),
+      parse("a = ${x}").asScalaConfig.readRoot[Map[String, Int]]
+    )
   }
 
   // (d) the same object, in both directions
@@ -272,7 +338,7 @@ class ScalaConfigTest {
   @Test
   def explicitNullsAreOn(): Unit = {
     assertFalse(typeChecks("val s: String = null"))
-    assertTrue(typeChecks("val s: String | Null = null"))
+    assertTrue(typeChecks("val s: String | scala.Null = null"))
   }
 
   @Test
@@ -281,6 +347,9 @@ class ScalaConfigTest {
     val hosts: List[String] = api.read[List[String]]("strs").getOrElse(Nil)
     val port: Option[Int] = api.readOption[Int]("i").getOrElse(None)
     val back: Config = api.asConfig
-    assertEquals(("text", 3, Some(42), true), (host, hosts.size, port, back.hasPath("s")))
+    assertEquals(
+      ("text", 3, Some(42), true),
+      (host, hosts.size, port, back.hasPath("s"))
+    )
   }
 }

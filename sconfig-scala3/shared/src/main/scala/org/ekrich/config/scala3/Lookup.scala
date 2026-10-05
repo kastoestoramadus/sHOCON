@@ -2,7 +2,7 @@ package org.ekrich.config.scala3
 
 import org.ekrich.config.ConfigValue
 
-/** The lossless result of looking up a path. */
+/** What is at a path, without collapsing explicit `null` into absence. */
 enum Lookup {
   case Missing
   case Null
