@@ -112,6 +112,17 @@ class ScalaConfigTest {
   }
 
   @Test
+  def pathBelowANullIsMissingNotNull(): Unit = {
+    val c = parse("o = null, l = [1]").asScalaConfig
+    assertEquals(Left(Null("o")), c.read[Int]("o"))
+    assertEquals(Left(Missing("o.x")), c.read[Int]("o.x"))
+    assertEquals(Left(Missing("o.x")), c.read[List[Int]]("o.x"))
+    assertEquals(Right(Lookup.Missing), c.lookup("o.x"))
+    assertEquals(Right(None), c.readOption[Int]("o.x"))
+    assertEquals(Left(Missing("l.x")), c.read[Int]("l.x"))
+  }
+
+  @Test
   def wrongType(): Unit = {
     assertEquals(Left(WrongType("s", "NUMBER", "STRING")), api.read[Int]("s"))
     assertEquals(
