@@ -9,6 +9,7 @@ import org.ekrich.config.ConfigException
 import org.ekrich.config.ConfigOrigin
 import org.ekrich.config.ConfigRenderOptions
 import org.ekrich.config.impl.AbstractConfigValue._
+import org.ekrich.config.impl.ScalaOps._
 import org.ekrich.config.ConfigValueType
 
 /**
@@ -53,8 +54,12 @@ object ConfigDelayedMerge {
     while (!stopped && ends.hasNext) {
       val end = ends.next()
       // a substitution hidden by a value it cannot merge with is never
-      // evaluated (HOCON spec), so stop once merged ignores fallbacks
-      if (merged != null && merged.ignoresFallbacks) {
+      // evaluated (HOCON spec), so stop once merged ignores fallbacks. A value
+      // that cannot become an object hides the rest even while a substitution
+      // inside it is unresolved, its own references to the values below
+      // having been resolved by now
+      if (merged != null &&
+          (merged.ignoresFallbacks || cannotBecomeAnObject(merged))) {
         if (ConfigImpl.traceSubstitutionsEnabled)
           ConfigImpl.trace(
             newContext.depth,
@@ -160,6 +165,22 @@ object ConfigDelayedMerge {
     ResolveResult.make(newContext, merged)
   }
 
+  // a list, or a concatenation of which a piece makes a list or a string
+  private def cannotBecomeAnObject(v: AbstractConfigValue): Boolean =
+    v match {
+      case _: SimpleConfigList    => true
+      case c: ConfigConcatenation =>
+        c.pieces.scalaOps.exists {
+          case _: SimpleConfigList => true
+          // whitespace between two objects is dropped
+          case s: ConfigString =>
+            s.wasQuoted || !s.unwrapped.forall(ConfigImplUtil.isWhitespace(_))
+          case _: Unmergeable | _: AbstractConfigObject => false
+          case _                                        => true
+        }
+      case _ => false
+    }
+
   // true when 'merged' holds every key of 'end' with a value that ignores
   // fallbacks, so merging 'end' underneath it would drop all of it
   private def allKeysShadowed(
@@ -209,8 +230,21 @@ object ConfigDelayedMerge {
     last.ignoresFallbacks
   }
   // static method also used by ConfigDelayedMergeObject.
+  private def appendComment(
+      sb: jl.StringBuilder,
+      comment: String
+  ): Unit = {
+    sb.append("#")
+    // a comment already parsed back keeps its leading space, and adding
+    // another one on every pass makes the render grow without bound
+    if (!comment.startsWith(" ")) sb.append(' ')
+    sb.append(comment)
+    sb.append("\n")
+  }
+
   def render(
       stack: ju.List[AbstractConfigValue],
+      wrapperOrigin: ConfigOrigin,
       sb: jl.StringBuilder,
       indentVal: Int,
       atRoot: Boolean,
@@ -218,43 +252,62 @@ object ConfigDelayedMerge {
       options: ConfigRenderOptions
   ): Unit = {
     val commentMerge = options.getComments
-    if (commentMerge) {
+    // The banner is generated text, and it parses back as comments on the
+    // values, so a second pass re-emits it and adds a banner of its own. Under
+    // a key the stack spells out as repeated key/value entries that need no
+    // explaining, so write it only where the value has no parseable spelling.
+    val banner = commentMerge && atKey == null
+    if (banner) {
       sb.append("# unresolved merge of " + stack.size + " values follows (\n")
-      if (atKey == null) {
-        indent(sb, indentVal, options)
-        sb.append(
-          "# this unresolved merge will not be parseable because it's at the root of the object\n"
-        )
-        indent(sb, indentVal, options)
-        sb.append(
-          "# the HOCON format has no way to list multiple root objects in a single file\n"
-        )
+      indent(sb, indentVal, options)
+      sb.append(
+        "# this unresolved merge will not be parseable because it's at the root of the object\n"
+      )
+      indent(sb, indentVal, options)
+      sb.append(
+        "# the HOCON format has no way to list multiple root objects in a single file\n"
+      )
+    }
+    // The caller indented the line we start on, so the first line we write
+    // must not indent again; every line after it must.
+    var indentPending = banner
+    def indentLine(): Unit =
+      if (indentPending) indent(sb, indentVal, options)
+      else indentPending = true
+
+    // Our origin aggregates the comments of the stack, and each entry prints
+    // its own below. What is left was put on the merge itself, and with the
+    // container skipping us nothing else would print it.
+    if (commentMerge && wrapperOrigin != null) {
+      val onEntries = new ju.HashSet[String]
+      stack.forEach(v => onEntries.addAll(v.origin.comments))
+      wrapperOrigin.comments.forEach { comment =>
+        if (!onEntries.contains(comment)) {
+          indentLine()
+          appendComment(sb, comment)
+        }
       }
     }
+
     val reversed = new ju.ArrayList[AbstractConfigValue]
     reversed.addAll(stack)
     ju.Collections.reverse(reversed)
     var i = 0
     reversed.forEach { v =>
-      if (commentMerge) {
-        indent(sb, indentVal, options)
-        if (atKey != null)
-          sb.append(
-            "#     unmerged value " + i + " for key " + ConfigImplUtil
-              .renderJsonString(atKey) + " from "
-          )
-        else sb.append("#     unmerged value " + i + " from ")
+      if (banner) {
+        indentLine()
+        sb.append("#     unmerged value " + i + " from ")
         i += 1
         sb.append(v.origin.description)
         sb.append("\n")
+      }
+      if (commentMerge) {
         v.origin.comments.forEach { comment =>
-          indent(sb, indentVal, options)
-          sb.append("# ")
-          sb.append(comment)
-          sb.append("\n")
+          indentLine()
+          appendComment(sb, comment)
         }
       }
-      indent(sb, indentVal, options)
+      indentLine()
       if (atKey != null) {
         sb.append(ConfigImplUtil.renderJsonString(atKey))
         if (options.getFormatted) sb.append(" : ") else sb.append(":")
@@ -269,8 +322,8 @@ object ConfigDelayedMerge {
       sb.setLength(sb.length - 1) // also chop comma
       sb.append("\n") // put a newline back
     }
-    if (commentMerge) {
-      indent(sb, indentVal, options)
+    if (banner) {
+      indentLine()
       sb.append("# ) end of unresolved merge\n")
     }
   }
@@ -382,7 +435,7 @@ final class ConfigDelayedMerge(
       atKey: String,
       options: ConfigRenderOptions
   ): Unit = {
-    ConfigDelayedMerge.render(stack, sb, indent, atRoot, atKey, options)
+    ConfigDelayedMerge.render(stack, origin, sb, indent, atRoot, atKey, options)
   }
 
   override def renderValue(

@@ -2,9 +2,13 @@ package org.ekrich.config.impl
 
 import org.junit.*
 import org.junit.Assert.*
+
+import java.{util => ju}
+
 import org.ekrich.config.ConfigFactory
 import org.ekrich.config.ConfigFormatOptions
 import org.ekrich.config.ConfigParseOptions
+import org.ekrich.config.ConfigResolveOptions
 
 import scala.jdk.CollectionConverters.*
 
@@ -92,7 +96,6 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
         |""".stripMargin
     checkEqualsAndStable(expected, result)
   }
-
   // an object nested inside an array is never itself "at root" - it always
   // needs its own braces, first entry included. Porting lightbend/config#832.
   @Test
@@ -124,5 +127,211 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
     val resolved =
       ConfigFactory.parseString(result, ConfigParseOptions.defaults).resolve()
     assertEquals(List(1, 2, 1, 2), resolved.getIntList("except").asScala)
+  }
+
+  // lightbend/config#800: the nested merge a partial resolve left behind has
+  // no spelling in HOCON, so the render could not be read back
+  // The partiallyResolved* cases below are not from lightbend/config: they pin
+  // that a partially resolved value that cannot become an object hides the
+  // merge stack below it (ConfigDelayedMerge.cannotBecomeAnObject). Revisit
+  // and drop them when upstream adds equivalent coverage.
+  @Test
+  def partiallyResolvedAppendsRenderAsOneList(): Unit = {
+    val in = """a = [${s}-1]
+               |a += ${s}-2
+               |a += ${s}-3
+               |a += ${s}-4""".stripMargin
+    val partial = ConfigFactory
+      .parseString(in, parseOptions)
+      .resolve(ConfigResolveOptions.defaults.setAllowUnresolved(true))
+    val result = partial.root.render(
+      myDefaultRenderOptions.setConfigFormatOptions(defaultFormatOptions)
+    )
+
+    val expected = """a = [
+                     |    ${s}-1,
+                     |    ${s}-2,
+                     |    ${s}-3,
+                     |    ${s}-4
+                     |]
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
+  }
+
+  // An unresolved merge under a key renders as repeated key/value entries. The
+  // banner it used to carry parsed back as comments on those values, so every
+  // pass re-emitted them and added one of its own.
+  @Test
+  def unresolvedMergesRenderToAFixedPoint(): Unit = {
+    val inputs = List(
+      """a : [1]
+        |a += 2""".stripMargin,
+      """a : 1
+        |a : ${a}""".stripMargin,
+      """path = [ /bin ]
+        |path = ${path} [ /usr/bin ]""".stripMargin,
+      """path : "a:b:c"
+        |path : ${path}":d"""".stripMargin,
+      """foo : { a : { c : 1 } }
+        |foo : ${foo.a}
+        |foo : { a : 2 }""".stripMargin,
+      """a : 1
+        |b : 2
+        |a : ${b}
+        |b : ${a}""".stripMargin,
+      """# one
+        |a : 1
+        |# two
+        |a : ${a}""".stripMargin
+    )
+    inputs.foreach { in =>
+      val result = formatHocon(in)
+      checkReparses(result)
+      checkEqualObjects(result, formatHocon(result))
+    }
+  }
+
+  @Test
+  def commentsStayWithTheirMergedValue(): Unit = {
+    val in = """# one
+               |a : 1
+               |# two
+               |a : ${a}""".stripMargin
+    val result = formatHocon(in)
+
+    val expected = """# one
+                     |"a" : 1,
+                     |# two
+                     |"a" : ${a}
+                     |
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
+  }
+
+  @Test
+  def nestedUnresolvedMergeIndentsLikeItsSiblings(): Unit = {
+    val in = """outer {
+               |  sib : 0
+               |  a : 1
+               |  a : ${outer.a}
+               |}""".stripMargin
+    val result = formatHocon(in)
+
+    val expected = """outer {
+                     |    "a" : 1,
+                     |    "a" : ${outer.a}
+                     |
+                     |    sib = 0
+                     |}
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
+  }
+
+  @Test
+  def commentsOnTheMergeItselfSurvive(): Unit = {
+    val root = ConfigFactory.parseString("a : 1\na : ${a}", parseOptions).root
+    val merge = root.get("a")
+    val tagged =
+      merge.withOrigin(
+        merge.origin.withComments(ju.Collections.singletonList("kept"))
+      )
+    val result = root
+      .withValue("a", tagged)
+      .render(
+        myDefaultRenderOptions.setConfigFormatOptions(defaultFormatOptions)
+      )
+
+    val expected = """# kept
+                     |"a" : 1,
+                     |"a" : ${a}
+                     |
+                     |""".stripMargin
+    checkEqualObjects(expected, result)
+  }
+
+  // with no key to spell it out as repeated entries, a merge can only be
+  // described
+  @Test
+  def unresolvedMergeRenderedWithoutAKeyIsDescribed(): Unit = {
+    val merge =
+      ConfigFactory.parseString("a : 1\na : ${a}", parseOptions).root.get("a")
+    val options =
+      myDefaultRenderOptions.setConfigFormatOptions(defaultFormatOptions)
+
+    val expected =
+      """# unresolved merge of 2 values follows (
+        |# this unresolved merge will not be parseable because it's at the root of the object
+        |# the HOCON format has no way to list multiple root objects in a single file
+        |#     unmerged value 0 from String: 1
+        |1,
+        |#     unmerged value 1 from String: 2
+        |${a}
+        |# ) end of unresolved merge
+        |""".stripMargin
+    checkEqualObjects(expected, merge.render(options))
+    checkEqualObjects("1,\n${a}\n", merge.render(options.setComments(false)))
+  }
+
+  @Test
+  def unresolvedMergeInsideArrayElementRendersToAFixedPoint(): Unit = {
+    val in = """l = [ { a : 1
+               |a : ${x} } ]""".stripMargin
+    val result = formatHocon(in)
+
+    val expected = """l = [
+                     |    {
+                     |        "a" : 1,
+                     |        "a" : ${x}
+                     |
+                     |    }
+                     |]
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
+  }
+
+  @Test
+  def partiallyResolvedSelfReferencesRenderAsOneValue(): Unit = {
+    val in = """a = ${s}-1
+               |a = ${a}-2
+               |a = ${a}-3
+               |b = ${base}
+               |b += ${s}-2
+               |b += ${s}-3""".stripMargin
+    val partial = ConfigFactory
+      .parseString(in, parseOptions)
+      .resolve(ConfigResolveOptions.defaults.setAllowUnresolved(true))
+    val result = partial.root.render(
+      myDefaultRenderOptions.setConfigFormatOptions(defaultFormatOptions)
+    )
+
+    val expected = """a = ${s}"-1-2-3"
+                     |b = ${base}[
+                     |    ${s}-2,
+                     |    ${s}-3
+                     |]
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
+  }
+
+  def commentsOfNestedUnresolvedMergeIndentLikeItsSiblings(): Unit = {
+    val in = """outer {
+               |  sib : 0
+               |  # c1
+               |  a : 1
+               |  # c2
+               |  a : ${outer.a}
+               |}""".stripMargin
+    val result = formatHocon(in)
+
+    val expected = """outer {
+                     |    # c1
+                     |    "a" : 1,
+                     |    # c2
+                     |    "a" : ${outer.a}
+                     |
+                     |    sib = 0
+                     |}
+                     |""".stripMargin
+    checkEqualsAndStable(expected, result)
   }
 }
