@@ -827,18 +827,14 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
     checkEqualObjects("r.p.x = 1\n", formatHocon(in)(simplify))
   }
 
-  // known limitation, pinned so a change is noticed: with the option on, the
-  // comment above a += field is printed above the delayed assignment and above
-  // its element. The no-gap input duplicates on both revisions, so this is an
-  // existing += rendering defect that preservation exposes, not a new parser
-  // bug; fixing it belongs in a separate change.
+  // the comment above a += field is printed once with the option on as well
+  // (plus-equals-comment-once); keep-detached-comments pinned the old double print
   @Test
-  def aPlusEqualsCommentIsPrintedTwiceWithTheOption(): Unit = {
+  def aPlusEqualsCommentIsPrintedOnceWithTheOption(): Unit = {
     val in = "a=[]\n# plus\n\na+=2"
     val result = formatHoconWith(in, keepDetachedComments)
 
-    val expected =
-      "\"a\" : [],\n# plus\n\"a\" : ${?a}[\n    # plus\n    2\n]\n\n"
+    val expected = "a = []\n# plus\na = ${?a}[\n    2\n]\n"
     checkEqualsAndStable(expected, result)
   }
 
