@@ -84,10 +84,11 @@ object ConfigParser {
     // problem we should be able to get rid of this variable.
     private[impl] var arrayCount = 0
     private var nestingDepth = 0
-    private def enterNested(): Unit = {
+    private def enterNested(n: AbstractConfigNode): Unit = {
       if (nestingDepth >= ConfigParser.maxNestingDepth)
         throw parseError(
-          "too much nesting: more than " + ConfigParser.maxNestingDepth + " levels"
+          "too much nesting: more than " + ConfigParser.maxNestingDepth + " levels",
+          n
         )
       nestingDepth += 1
     }
@@ -169,11 +170,11 @@ object ConfigParser {
       if (n.isInstanceOf[ConfigNodeSimpleValue])
         v = n.asInstanceOf[ConfigNodeSimpleValue].value
       else if (n.isInstanceOf[ConfigNodeObject]) {
-        enterNested()
+        enterNested(n)
         try v = parseObject(n.asInstanceOf[ConfigNodeObject])
         finally nestingDepth -= 1
       } else if (n.isInstanceOf[ConfigNodeArray]) {
-        enterNested()
+        enterNested(n)
         try v = parseArray(n.asInstanceOf[ConfigNodeArray])
         finally nestingDepth -= 1
       } else if (n.isInstanceOf[ConfigNodeConcatenation])
