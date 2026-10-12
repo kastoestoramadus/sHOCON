@@ -114,13 +114,32 @@ object ConfigParser {
         case _                     => lineOrigin
       }
 
-    private def parseError(message: String): ConfigException.Parse =
-      parseError(message, null)
+    // the line counter cannot see the newlines embedded in a multiline token,
+    // so build a diagnostic origin from the offending node's tokens instead;
+    // the tokenizer records an origin (with line) for every token it pulls.
+    // fall back to the counter for nodes whose tokens carry no line.
+    private def parseErrorOrigin(n: AbstractConfigNode): SimpleConfigOrigin = {
+      val tokens = n.tokens.iterator
+      while (tokens.hasNext) {
+        val line = tokens.next.lineNumber
+        if (line >= 0)
+          return baseOrigin
+            .asInstanceOf[SimpleConfigOrigin]
+            .withLineNumber(line)
+      }
+      lineOrigin
+    }
     private def parseError(
         message: String,
-        cause: Throwable
+        n: AbstractConfigNode
     ): ConfigException.Parse =
-      new ConfigException.Parse(lineOrigin, message, cause)
+      parseError(message, null, n)
+    private def parseError(
+        message: String,
+        cause: Throwable,
+        n: AbstractConfigNode
+    ): ConfigException.Parse =
+      new ConfigException.Parse(parseErrorOrigin(n), message, cause)
     private def fullCurrentPath = {
       // pathStack has top of stack at front
       if (pathStack.isEmpty)
@@ -146,7 +165,8 @@ object ConfigParser {
         v = parseConcatenation(n.asInstanceOf[ConfigNodeConcatenation])
       else
         throw parseError(
-          "Expecting a value but got wrong node type: " + n.getClass
+          "Expecting a value but got wrong node type: " + n.getClass,
+          n
         )
       if (comments != null && !comments.isEmpty) {
         v = v.withOrigin(
@@ -181,7 +201,8 @@ object ConfigParser {
             case e: MalformedURLException =>
               throw parseError(
                 "include url() specifies an invalid URL: " + n.name,
-                e
+                e,
+                n
               )
           }
           obj = includer.includeURL(cic, url).asInstanceOf[AbstractConfigObject]
@@ -203,7 +224,8 @@ object ConfigParser {
       // See https://github.com/lightbend/config/issues/160
       if (arrayCount > 0 && (obj.resolveStatus ne ResolveStatus.RESOLVED))
         throw parseError(
-          "Due to current limitations of the config parser, when an include statement is nested inside a list value, " + "${} substitutions inside the included file cannot be resolved correctly. Either move the include outside of the list value or " + "remove the ${} statements from the included file."
+          "Due to current limitations of the config parser, when an include statement is nested inside a list value, " + "${} substitutions inside the included file cannot be resolved correctly. Either move the include outside of the list value or " + "remove the ${} statements from the included file.",
+          n
         )
       if (!pathStack.isEmpty) {
         val prefix = fullCurrentPath
@@ -255,7 +277,8 @@ object ConfigParser {
             // https://github.com/lightbend/config/issues/160
             if (arrayCount > 0)
               throw parseError(
-                "Due to current limitations of the config parser, += does not work nested inside a list. " + "+= expands to a ${} substitution and the path in ${} cannot currently refer to list elements. " + "You might be able to move the += outside of the list and then refer to it from inside the list with ${}."
+                "Due to current limitations of the config parser, += does not work nested inside a list. " + "+= expands to a ${} substitution and the path in ${} cannot currently refer to list elements. " + "You might be able to move the += outside of the list and then refer to it from inside the list with ${}.",
+                field
               )
             // because we will put it in an array after the fact so
             // we want this to be incremented during the parseValue
@@ -335,7 +358,8 @@ object ConfigParser {
               // could become an object).
               if (flavor eq ConfigSyntax.JSON)
                 throw parseError(
-                  "JSON does not allow duplicate fields: '" + key + "' was already seen at " + existing.origin.description
+                  "JSON does not allow duplicate fields: '" + key + "' was already seen at " + existing.origin.description,
+                  field
                 )
               else newValue = newValue.withFallback(existing)
             }
