@@ -635,8 +635,7 @@ final class SimpleConfigObject(
       val newKeyElement = ConfigImplUtil.renderStringUnquotedIfPossible(
         keySet.iterator().next()
       )
-      val newAggregate = (if (keysAggregate.isEmpty) ""
-                          else s"$keysAggregate.") + newKeyElement
+      val newAggregate = FormatUtil.joinPath(keysAggregate, newKeyElement)
 
       nextValue match {
         case nested: SimpleConfigObject =>
@@ -653,14 +652,16 @@ final class SimpleConfigObject(
 
   private def tryCompressToMultipath(
       options: ConfigRenderOptions
-  ): MultiPathEntry =
-    if (!(options.getFormatted && options.getConfigFormatOptions.getSimplifyNestedObjects) ||
+  ): MultiPathEntry = {
+    val fmt = AbstractConfigValue.formatOptions(options)
+    if (!(options.getFormatted && fmt.getSimplifyNestedObjects) ||
         options.getJson || options.getOriginComments) {
       null
     } else
       tryCompressToMultipathRec(
         ""
       )
+  }
 
   override def renderValue(
       sb: jl.StringBuilder,
@@ -670,7 +671,8 @@ final class SimpleConfigObject(
   ): Unit = {
     if (isEmpty) sb.append("{}")
     else renderValueAsMultiLineObject(sb, indentVal, atRoot, options)
-    if (atRoot && options.getFormatted && options.getConfigFormatOptions.getNewLineAtEnd)
+    val fmt = AbstractConfigValue.formatOptions(options)
+    if (atRoot && options.getFormatted && fmt.newLineAtEnd)
       sb.append('\n')
   }
 
@@ -687,8 +689,7 @@ final class SimpleConfigObject(
       case multiPath if multiPath != null =>
         val aggKey = multiPath.compactedKeys
         val leafValue = multiPath.leafNode
-        val path =
-          if (renderedPrefix == null) aggKey else s"$renderedPrefix.$aggKey"
+        val path = FormatUtil.joinPath(renderedPrefix, aggKey)
         leafValue.renderWithRenderedKey(sb, path, options)
         leafValue.renderValue(sb, indentVal, false, options)
         true
@@ -732,7 +733,7 @@ final class SimpleConfigObject(
     val keys = new ju.ArrayList[String]
     keys.addAll(keySet)
     val ordering =
-      if (options.getConfigFormatOptions.getKeepOriginOrder)
+      if (AbstractConfigValue.formatOptions(options).keepOriginOrder)
         new SimpleConfigObject.KeepOriginRenderComparator(str =>
           value.get(str).origin
         )
@@ -790,10 +791,7 @@ final class SimpleConfigObject(
     if (options.getComments) {
       comments.forEach { comment =>
         AbstractConfigValue.indent(sb, innerIndent, options)
-        sb.append("#")
-        if (!comment.startsWith(" ")) sb.append(' ')
-        sb.append(comment)
-        sb.append("\n")
+        FormatUtil.appendComment(sb, comment)
       }
     }
   }
