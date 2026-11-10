@@ -50,7 +50,6 @@ object ConfigDelayedMerge {
     var merged: AbstractConfigValue = null
     var stopped = false
     val ends = stack.iterator
-    // the end value may or may not be resolved already
     while (!stopped && ends.hasNext) {
       val end = ends.next()
       // a substitution hidden by a value it cannot merge with is never
@@ -66,7 +65,22 @@ object ConfigDelayedMerge {
             "merged ignores fallbacks, skipping remaining stack"
           )
         stopped = true
+      } else if (merged != null && !end.isInstanceOf[Unmergeable] && !end
+            .isInstanceOf[
+              AbstractConfigObject
+            ]) {
+        // Extends that rule to what a hidden value contains: a non-object
+        // (e.g. [${MISSING}]) below merged only stops the merge, so its
+        // substitutions are never evaluated either.
+        if (ConfigImpl.traceSubstitutionsEnabled)
+          ConfigImpl.trace(
+            newContext.depth,
+            "non-object " + end + " is hidden by merged, merging it unresolved and stopping"
+          )
+        merged = merged.withFallback(end)
+        stopped = true
       } else {
+        // the end value may or may not be resolved already
         var sourceForEnd: ResolveSource = null
         var shadowed = false
         if (end.isInstanceOf[ReplaceableMergeStack])
