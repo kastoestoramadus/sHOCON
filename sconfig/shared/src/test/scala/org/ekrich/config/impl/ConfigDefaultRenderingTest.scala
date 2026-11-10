@@ -13,20 +13,22 @@ import org.ekrich.config.ConfigObject
 import org.ekrich.config.ConfigParseOptions
 import org.ekrich.config.ConfigResolveOptions
 
+import scala.annotation.nowarn
 import scala.jdk.CollectionConverters.*
 import org.ekrich.config.ConfigRenderOptions
 import org.ekrich.config.ConfigSyntax
 
 // Regression tests for rendering old behaviour compatibility
 class ConfigDefaultRenderingTest extends RenderingTestSuite {
+  @nowarn("cat=deprecation")
   private implicit val defaultFormatOptions: ConfigFormatOptions =
-    ConfigFormatOptions.defaults
+    ConfigRenderOptions.defaults.getConfigFormatOptions
 
   @Test
   def newLineAtTheEnd(): Unit = {
     val in = """r {
                |}""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
     val expected = """r {}
                      |""".stripMargin
     checkEqualsAndStable(expected, result)
@@ -41,7 +43,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
                |        }
                |     }
                |}""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """r {
                      |    p {
@@ -61,7 +63,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
                |      "n-m"=1
                |    n:"ALA"
                |}""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """r {
                      |    n = ALA
@@ -75,7 +77,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   @Test
   def dontSimplifyOneEntryNestedObjects(): Unit = {
     val in = """r.p.d= 42"""
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected =
       """r {
@@ -93,7 +95,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
       """except: ${ex1} ${ex2}
         |myEmpty: " "
         |""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected =
       """except = ${ex1} ${ex2}
@@ -106,7 +108,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   @Test
   def listElementsKeepTheirBraces(): Unit = {
     val in = """root = [{foo = bar}, {baz = qux}]"""
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """root = [
                      |    {
@@ -127,7 +129,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   def arrayConcatenationRoundTripsThroughRender(): Unit = {
     val in = """ex1 = [1, 2]
                |except = ${ex1} ${ex1}""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val resolved =
       ConfigFactory.parseString(result, ConfigParseOptions.defaults).resolve()
@@ -161,9 +163,9 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
         |a : ${a}""".stripMargin
     )
     inputs.foreach { in =>
-      val result = formatHocon(in)
+      val result = renderHocon(in)
       checkReparses(result)
-      checkEqualObjects(result, formatHocon(result))
+      checkEqualObjects(result, renderHocon(result))
     }
   }
 
@@ -173,7 +175,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
                |a : 1
                |# two
                |a : ${a}""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """# one
                      |a = 1
@@ -190,7 +192,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
                |  a : 1
                |  a : ${outer.a}
                |}""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """outer {
                      |    a = 1
@@ -202,6 +204,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   }
 
   @Test
+  @nowarn("cat=deprecation")
   def commentsOnTheMergeItselfSurvive(): Unit = {
     val root = ConfigFactory.parseString("a : 1\na : ${a}", parseOptions).root
     val merge = root.get("a")
@@ -233,7 +236,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
     val in = """a : 1
                |a : ${a}
                |sib : 0""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """a = 1
                      |a = ${a}
@@ -259,7 +262,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   def mergeStackQuotesKeysThatNeedIt(): Unit = {
     val in = """"a b" : 1
                |"a b" : ${x}""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """"a b" = 1
                      |"a b" = ${x}
@@ -290,7 +293,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   def commentOnPlusEqualsIsRenderedOnce(): Unit = {
     val in = """# two
                |a += 2""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """# two
                      |a = ${?a}[
@@ -305,10 +308,10 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
     val in = """a : [1]
                |# two
                |a += 2""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     assertEquals(1, result.split("# two", -1).length - 1)
-    checkEqualObjects(result, formatHocon(result))
+    checkEqualObjects(result, renderHocon(result))
   }
 
   @Test
@@ -328,7 +331,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   def commentOnPlusEqualsOfAnObjectIsRenderedOnce(): Unit = {
     val in = """# two
                |a += { x = 1 }""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """# two
                      |a = ${?a}[
@@ -365,6 +368,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   // with no key to spell it out as repeated entries, a merge can only be
   // described
   @Test
+  @nowarn("cat=deprecation")
   def unresolvedMergeRenderedWithoutAKeyIsDescribed(): Unit = {
     val merge =
       ConfigFactory.parseString("a : 1\na : ${a}", parseOptions).root.get("a")
@@ -389,7 +393,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   def unresolvedMergeInsideArrayElementRendersToAFixedPoint(): Unit = {
     val in = """l = [ { a : 1
                |a : ${x} } ]""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """l = [
                      |    {
@@ -410,7 +414,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
                |  # c2
                |  a : ${outer.a}
                |}""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """outer {
                      |    # c1
@@ -763,7 +767,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
                     |
                     |a = 1
                     |""".stripMargin
-    checkEqualsAndStable("a = 1\n", formatHocon(licence))
+    checkEqualsAndStable("a = 1\n", renderHocon(licence))
 
     val order = """# one
                   |
@@ -772,7 +776,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
                   |# three
                   |a = 1
                   |""".stripMargin
-    checkEqualsAndStable("# three\na = 1\n", formatHocon(order))
+    checkEqualsAndStable("# three\na = 1\n", renderHocon(order))
 
     val array = """a = [
                   |# one
@@ -783,7 +787,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
                   |2
                   |]
                   |""".stripMargin
-    checkEqualsAndStable("a = [\n    1,\n    2\n]\n", formatHocon(array))
+    checkEqualsAndStable("a = [\n    1,\n    2\n]\n", renderHocon(array))
 
     val braced = "# header\n\n{a=1}\n"
     checkEqualObjects(
@@ -798,7 +802,9 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   @Test
   def simplifyNestedObjectsDoesNotCompressAnObjectWithKeptComments(): Unit = {
     val simplify =
-      ConfigFormatOptions.defaults.setSimplifyNestedObjects(true)
+      ConfigFormatOptions.defaults
+        .setDoubleIndent(true)
+        .setSimplifyNestedObjects(true)
     val in = """r{
                |# obj
                |
@@ -824,7 +830,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
     )
 
     // with the option off there are no comments and the path still compresses
-    checkEqualObjects("r.p.x = 1\n", formatHocon(in)(simplify))
+    checkEqualObjects("r.p.x = 1\n", renderHocon(in)(simplify))
   }
 
   // the comment above a += field is printed once with the option on as well
@@ -844,7 +850,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   def envVarListExpansionSubstitutionRendersVerbatim(): Unit = {
     val in = """a = ${FOO[]}
                |b = ${?FOO[]}""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
     val expected = """a = ${FOO[]}
                      |b = ${?FOO[]}
                      |""".stripMargin
@@ -908,7 +914,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   def repeatedMergeEntriesUseFieldSpacingForAppendedList(): Unit = {
     val in = """a : [1]
                |a += 2""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """a = [
                      |    1
@@ -924,7 +930,7 @@ class ConfigDefaultRenderingTest extends RenderingTestSuite {
   def repeatedMergeEntriesUseFieldSpacingForNestedAppendedList(): Unit = {
     val in = """o { a : [1]
                |a += 2 }""".stripMargin
-    val result = formatHocon(in)
+    val result = renderHocon(in)
 
     val expected = """o {
                      |    a = [
